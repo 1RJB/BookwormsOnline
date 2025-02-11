@@ -21,7 +21,9 @@ namespace BookwormOnline.Services
             var secretKey = _configuration["ReCaptcha:SecretKey"];
             var response = await _httpClient.GetStringAsync($"https://www.google.com/recaptcha/api/siteverify?secret={secretKey}&response={token}");
             var jsonResponse = JObject.Parse(response);
-            return jsonResponse.Value<bool>("success");
+            var isSuccess = jsonResponse.Value<bool>("success");
+            Console.WriteLine($"ReCaptcha verification result: {isSuccess}");
+            return isSuccess;
         }
     }
 }
