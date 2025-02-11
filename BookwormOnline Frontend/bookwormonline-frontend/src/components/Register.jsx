@@ -16,6 +16,7 @@ const Register = () => {
     email: "",
     password: "",
     confirmPassword: "",
+    photo: null,
   })
   const [error, setError] = useState("")
   const { register } = useAuth()
@@ -23,7 +24,12 @@ const Register = () => {
   const { executeRecaptcha } = useGoogleReCaptcha()
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value })
+    const { name, value, files } = e.target
+    if (name === "photo") {
+      setFormData({ ...formData, photo: files[0] })
+    } else {
+      setFormData({ ...formData, [name]: value })
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -42,7 +48,14 @@ const Register = () => {
 
     try {
       const reCaptchaToken = await executeRecaptcha("register")
-      await register({ ...formData, reCaptchaToken })
+
+      const formDataToSubmit = new FormData()
+      Object.keys(formData).forEach((key) => {
+        formDataToSubmit.append(key, formData[key])
+      })
+      formDataToSubmit.append("reCaptchaToken", reCaptchaToken)
+
+      await register(formDataToSubmit)
       navigate("/login")
     } catch (err) {
       const errorMessage = err.response?.data?.message || "Registration failed. Please try again."
@@ -90,6 +103,10 @@ const Register = () => {
         <div>
           <label htmlFor="confirmPassword">Confirm Password</label>
           <input type="password" id="confirmPassword" name="confirmPassword" required onChange={handleChange} />
+        </div>
+        <div>
+          <label htmlFor="photo">Profile Picture (JPG only)</label>
+          <input type="file" id="photo" name="photo" accept="image/jpeg" onChange={handleChange} />
         </div>
         <button type="submit">Register</button>
       </form>
