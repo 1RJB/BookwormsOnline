@@ -1,0 +1,78 @@
+@baseUrl = https://localhost:7177/api
+@token = CfDJ8ONCK66UoWNMsImCHccWpEr6Eymeeh8y0zg1MtZ8D_a6WAb23WPsG0Hbds1UleJ43DFFh_G-ABQSaER66plE8ydRYLqVs1st70tiby-bHd0i47aaR8VraMEp5njnGKv4_mYwtvIynPBnuTEF-iRLc9s
+
+
+### Register a new user
+POST {{baseUrl}}/user/register
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "creditCardNo": "1234567890123456",
+  "mobileNo": "+1234567890",
+  "billingAddress": "123 Billing St, City, Country",
+  "shippingAddress": "456 Shipping Ave, Town, Country",
+  "email": "john.doe@example.com",
+  "password": "StrongP@ssw0rd123!",
+  "reCaptchaToken": "RECAPTCHA_TOKEN_HERE"
+}
+
+### Login
+POST {{baseUrl}}/user/login
+Content-Type: application/json
+
+{
+  "email": "john.doe@example.com",
+  "password": "StrongP@ssw0rd123!"
+}
+
+### Get user profile (requires authentication)
+GET {{baseUrl}}/user/profile
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Change password (requires authentication)
+POST {{baseUrl}}/user/change-password
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+{
+  "currentPassword": "StrongP@ssw0rd123!",
+  "newPassword": "NewStrongP@ssw0rd456!"
+}
+
+### Forgot password
+POST {{baseUrl}}/user/forgot-password
+Content-Type: application/json
+
+{
+  "email": "john.doe@example.com"
+}
+
+### Reset password
+POST {{baseUrl}}/user/reset-password
+Content-Type: application/json
+
+{
+  "resetToken": "RESET_TOKEN_HERE",
+  "newPassword": "NewStrongP@ssw0rd789!"
+}
+
+### Logout (requires authentication)
+POST {{baseUrl}}/user/logout
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### Upload photo (requires authentication)
+POST {{baseUrl}}/file/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="profile.jpg"
+Content-Type: image/jpeg
+
+< ./path/to/your/profile.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### Get CSRF token
+GET {{baseUrl}}/csrf/token

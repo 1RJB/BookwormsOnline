@@ -1,0 +1,390 @@
+﻿using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using System.Threading.Tasks;
+using BookwormOnline.Data;
+using BookwormOnline.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+using BookwormOnline.Services;
+using Ganss.Xss;
+using Microsoft.AspNetCore.Antiforgery;
+
+namespace BookwormOnline.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class UserController : ControllerBase
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly IConfiguration _configuration;
+        private readonly ReCaptchaService _reCaptchaService;
+        private readonly HtmlSanitizer _sanitizer = new HtmlSanitizer();
+        private readonly IAntiforgery _antiforgery;
+
+        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IAntiforgery antiforgery)
+        {
+            _context = context;
+            _configuration = configuration;
+            _reCaptchaService = reCaptchaService;
+            _antiforgery = antiforgery;
+        }
+
+        [HttpPost("register")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Register([FromBody] RegisterModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            // Verify reCAPTCHA token
+            var isReCaptchaValid = await _reCaptchaService.VerifyToken(model.ReCaptchaToken);
+            if (!isReCaptchaValid)
+            {
+                return BadRequest("reCAPTCHA verification failed");
+            }
+
+            // Check for duplicate email
+            if (await _context.Users.AnyAsync(u => u.Email == model.Email))
+            {
+                return BadRequest("Email already exists");
+            }
+
+            // Validate password complexity
+            if (!IsPasswordStrong(model.Password))
+            {
+                return BadRequest("Password does not meet complexity requirements");
+            }
+
+            // Sanitize input
+            model.FirstName = _sanitizer.Sanitize(model.FirstName);
+            model.LastName = _sanitizer.Sanitize(model.LastName);
+            model.BillingAddress = _sanitizer.Sanitize(model.BillingAddress);
+            model.ShippingAddress = _sanitizer.Sanitize(model.ShippingAddress);
+
+            // Validate email format
+            if (!IsValidEmail(model.Email))
+            {
+                return BadRequest("Invalid email format");
+            }
+
+            // Validate mobile number format
+            if (!IsValidMobileNumber(model.MobileNo))
+            {
+                return BadRequest("Invalid mobile number format");
+            }
+
+            var user = new User
+            {
+                FirstName = model.FirstName,
+                LastName = model.LastName,
+                CreditCardNo = EncryptData(model.CreditCardNo),
+                MobileNo = model.MobileNo,
+                BillingAddress = model.BillingAddress,
+                ShippingAddress = model.ShippingAddress,
+                Email = model.Email,
+                PasswordHash = HashPassword(model.Password),
+                CreatedAt = DateTime.UtcNow,
+                LastPasswordChangeDate = DateTime.UtcNow
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            return Ok("User registered successfully");
+        }
+
+        private bool IsValidEmail(string email)
+        {
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(email);
+                return addr.Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsValidMobileNumber(string mobileNo)
+        {
+            return Regex.IsMatch(mobileNo, @"^\+?[1-9]\d{1,14}$");
+        }
+
+        public class RegisterModel
+        {
+            public required string FirstName { get; set; }
+            public required string LastName { get; set; }
+            public required string CreditCardNo { get; set; }
+            public required string MobileNo { get; set; }
+            public required string BillingAddress { get; set; }
+            public required string ShippingAddress { get; set; }
+            public required string Email { get; set; }
+            public required string Password { get; set; }
+            public required string ReCaptchaToken { get; set; }
+        }
+
+        [HttpPost("login")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Login([FromBody] LoginModel model)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
+
+            if (user == null)
+            {
+                return Unauthorized("Invalid email or password");
+            }
+
+            if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTime.UtcNow)
+            {
+                return Unauthorized("Account is locked. Please try again later.");
+            }
+
+            if (!VerifyPassword(model.Password, user.PasswordHash))
+            {
+                user.LoginAttempts++;
+                if (user.LoginAttempts >= 3)
+                {
+                    user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+                }
+                await _context.SaveChangesAsync();
+                return Unauthorized("Invalid email or password");
+            }
+
+            user.LoginAttempts = 0;
+            user.LastLoginAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            HttpContext.Session.SetString("UserId", user.Id.ToString());
+            HttpContext.Session.SetString("LastActivity", DateTime.UtcNow.ToString());
+
+            var token = GenerateJwtToken(user);
+
+            return Ok(new { Token = token });
+        }
+
+        [Authorize]
+        [HttpPost("logout")]
+        [ValidateAntiForgeryToken]
+        public IActionResult Logout()
+        {
+            HttpContext.Session.Clear();
+            return Ok("Logged out successfully");
+        }
+
+        [Authorize]
+        [HttpGet("profile")]
+        public async Task<IActionResult> GetProfile()
+        {
+            // Check session timeout
+            var lastActivity = HttpContext.Session.GetString("LastActivity");
+            if (string.IsNullOrEmpty(lastActivity) || DateTime.Parse(lastActivity).AddMinutes(30) < DateTime.UtcNow)
+            {
+                HttpContext.Session.Clear();
+                return Unauthorized("Session expired");
+            }
+
+            // Update last activity
+            HttpContext.Session.SetString("LastActivity", DateTime.UtcNow.ToString());
+
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var user = await _context.Users.FindAsync(userId);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            // Decrypt sensitive data
+            user.CreditCardNo = DecryptData(user.CreditCardNo);
+
+            return Ok(user);
+        }
+
+        [Authorize]
+        [HttpPost("change-password")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordModel model)
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var user = await _context.Users.FindAsync(userId);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            if (!VerifyPassword(model.CurrentPassword, user.PasswordHash))
+            {
+                return BadRequest("Current password is incorrect");
+            }
+
+            if (!IsPasswordStrong(model.NewPassword))
+            {
+                return BadRequest("New password does not meet complexity requirements");
+            }
+
+            // Check password history
+            if (user.PreviousPasswords.Any(p => VerifyPassword(model.NewPassword, p)))
+            {
+                return BadRequest("New password must be different from the last 2 passwords");
+            }
+
+            // Check minimum password age
+            if (user.LastPasswordChangeDate.HasValue && user.LastPasswordChangeDate.Value.AddMinutes(5) > DateTime.UtcNow)
+            {
+                return BadRequest("You cannot change your password more than once every 5 minutes");
+            }
+
+            // Update password
+            user.PasswordHash = HashPassword(model.NewPassword);
+            user.LastPasswordChangeDate = DateTime.UtcNow;
+
+            // Update password history
+            user.PreviousPasswords.Add(user.PasswordHash);
+            if (user.PreviousPasswords.Count > 2)
+            {
+                user.PreviousPasswords.RemoveAt(0);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok("Password changed successfully");
+        }
+
+        [HttpPost("forgot-password")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordModel model)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
+
+            if (user == null)
+            {
+                // Don't reveal that the user does not exist
+                return Ok("If your email is registered, you will receive a password reset link");
+            }
+
+            // Generate password reset token
+            user.PasswordResetToken = Guid.NewGuid().ToString();
+            user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1);
+
+            await _context.SaveChangesAsync();
+
+            // TODO: Send email with password reset link
+            // For demo purposes, we'll just return the token
+            return Ok(new { ResetToken = user.PasswordResetToken });
+        }
+
+        [HttpPost("reset-password")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordModel model)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.ResetToken);
+
+            if (user == null || user.PasswordResetTokenExpiry < DateTime.UtcNow)
+            {
+                return BadRequest("Invalid or expired reset token");
+            }
+
+            if (!IsPasswordStrong(model.NewPassword))
+            {
+                return BadRequest("New password does not meet complexity requirements");
+            }
+
+            // Update password
+            user.PasswordHash = HashPassword(model.NewPassword);
+            user.PasswordResetToken = null;
+            user.PasswordResetTokenExpiry = null;
+            user.LastPasswordChangeDate = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return Ok("Password reset successfully");
+        }
+
+        public class ChangePasswordModel
+        {
+            public required string CurrentPassword { get; set; }
+            public required string NewPassword { get; set; }
+        }
+
+        public class ForgotPasswordModel
+        {
+            public required string Email { get; set; }
+        }
+
+        public class ResetPasswordModel
+        {
+            public required string ResetToken { get; set; }
+            public required string NewPassword { get; set; }
+        }
+
+        private bool IsPasswordStrong(string password)
+        {
+            return password.Length >= 12 &&
+                   Regex.IsMatch(password, @"[a-z]") &&
+                   Regex.IsMatch(password, @"[A-Z]") &&
+                   Regex.IsMatch(password, @"[0-9]") &&
+                   Regex.IsMatch(password, @"[^a-zA-Z0-9]");
+        }
+
+        private string HashPassword(string password)
+        {
+            return BCrypt.Net.BCrypt.HashPassword(password);
+        }
+
+        private bool VerifyPassword(string password, string hashedPassword)
+        {
+            return BCrypt.Net.BCrypt.Verify(password, hashedPassword);
+        }
+
+        private string EncryptData(string data)
+        {
+            // Implement encryption logic here
+            // For demonstration purposes, we'll use a simple Base64 encoding
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(data));
+        }
+
+        private string DecryptData(string encryptedData)
+        {
+            // Implement decryption logic here
+            // For demonstration purposes, we'll use a simple Base64 decoding
+            return Encoding.UTF8.GetString(Convert.FromBase64String(encryptedData));
+        }
+
+        private string GenerateJwtToken(User user)
+        {
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Email, user.Email)
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"],
+                audience: _configuration["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.Now.AddMinutes(30),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+
+    public class LoginModel
+    {
+        public required string Email { get; set; }
+        public required string Password { get; set; }
+    }
+}
