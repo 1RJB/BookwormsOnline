@@ -13,7 +13,6 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using BookwormOnline.Services;
 using Ganss.Xss;
-using Microsoft.AspNetCore.Http;
 
 namespace BookwormOnline.Controllers
 {
@@ -36,8 +35,7 @@ namespace BookwormOnline.Controllers
         }
 
         [HttpPost("register")]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Register([FromForm] RegisterModel model)
+        public async Task<IActionResult> Register([FromBody] RegisterModel model)
         {
             if (!ModelState.IsValid)
             {
@@ -161,7 +159,6 @@ namespace BookwormOnline.Controllers
         }
 
         [HttpPost("login")]
-        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Login([FromBody] LoginModel model)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
@@ -205,7 +202,6 @@ namespace BookwormOnline.Controllers
 
         [Authorize]
         [HttpPost("logout")]
-        [ValidateAntiForgeryToken]
         public IActionResult Logout()
         {
             HttpContext.Session.Clear();
@@ -243,7 +239,6 @@ namespace BookwormOnline.Controllers
 
         [Authorize]
         [HttpPost("change-password")]
-        [ValidateAntiForgeryToken]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordModel model)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
@@ -293,7 +288,6 @@ namespace BookwormOnline.Controllers
         }
 
         [HttpPost("forgot-password")]
-        [ValidateAntiForgeryToken]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordModel model)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
@@ -316,7 +310,6 @@ namespace BookwormOnline.Controllers
         }
 
         [HttpPost("reset-password")]
-        [ValidateAntiForgeryToken]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordModel model)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.ResetToken);
