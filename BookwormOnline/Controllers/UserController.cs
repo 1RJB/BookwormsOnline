@@ -13,7 +13,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using BookwormOnline.Services;
 using Ganss.Xss;
-using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Http;
 
 namespace BookwormOnline.Controllers
 {
@@ -25,27 +25,29 @@ namespace BookwormOnline.Controllers
         private readonly IConfiguration _configuration;
         private readonly ReCaptchaService _reCaptchaService;
         private readonly HtmlSanitizer _sanitizer = new HtmlSanitizer();
-        private readonly IAntiforgery _antiforgery;
+        private readonly IWebHostEnvironment _environment;
 
-        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IAntiforgery antiforgery)
+        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IWebHostEnvironment environment)
         {
             _context = context;
             _configuration = configuration;
             _reCaptchaService = reCaptchaService;
-            _antiforgery = antiforgery;
+            _environment = environment;
         }
 
         [HttpPost("register")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Register([FromBody] RegisterModel model)
+        public async Task<IActionResult> Register([FromForm] RegisterModel model)
         {
             if (!ModelState.IsValid)
             {
+                Console.WriteLine("ModelState is not valid");
                 return BadRequest(ModelState);
             }
 
             // Verify reCAPTCHA token
             var isReCaptchaValid = await _reCaptchaService.VerifyToken(model.ReCaptchaToken);
+            Console.WriteLine($"ReCaptcha verification result: {isReCaptchaValid}");
             if (!isReCaptchaValid)
             {
                 return BadRequest("reCAPTCHA verification failed");
@@ -54,12 +56,14 @@ namespace BookwormOnline.Controllers
             // Check for duplicate email
             if (await _context.Users.AnyAsync(u => u.Email == model.Email))
             {
+                Console.WriteLine("Email already exists");
                 return BadRequest("Email already exists");
             }
 
             // Validate password complexity
             if (!IsPasswordStrong(model.Password))
             {
+                Console.WriteLine("Password does not meet complexity requirements");
                 return BadRequest("Password does not meet complexity requirements");
             }
 
@@ -72,13 +76,35 @@ namespace BookwormOnline.Controllers
             // Validate email format
             if (!IsValidEmail(model.Email))
             {
+                Console.WriteLine("Invalid email format");
                 return BadRequest("Invalid email format");
             }
 
             // Validate mobile number format
             if (!IsValidMobileNumber(model.MobileNo))
             {
+                Console.WriteLine("Invalid mobile number format");
                 return BadRequest("Invalid mobile number format");
+            }
+
+            // Handle file upload
+            string photoPath = null;
+            if (model.Photo != null)
+            {
+                if (!model.Photo.ContentType.StartsWith("image/jpeg"))
+                {
+                    return BadRequest("Only JPG files are allowed");
+                }
+
+                var fileName = Guid.NewGuid().ToString() + Path.GetExtension(model.Photo.FileName);
+                var filePath = Path.Combine(_environment.WebRootPath, "uploads", fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await model.Photo.CopyToAsync(stream);
+                }
+
+                photoPath = fileName;
             }
 
             var user = new User
@@ -92,7 +118,8 @@ namespace BookwormOnline.Controllers
                 Email = model.Email,
                 PasswordHash = HashPassword(model.Password),
                 CreatedAt = DateTime.UtcNow,
-                LastPasswordChangeDate = DateTime.UtcNow
+                LastPasswordChangeDate = DateTime.UtcNow,
+                PhotoPath = photoPath
             };
 
             _context.Users.Add(user);
@@ -130,6 +157,7 @@ namespace BookwormOnline.Controllers
             public required string Email { get; set; }
             public required string Password { get; set; }
             public required string ReCaptchaToken { get; set; }
+            public IFormFile Photo { get; set; }
         }
 
         [HttpPost("login")]
@@ -140,11 +168,13 @@ namespace BookwormOnline.Controllers
 
             if (user == null)
             {
+                Console.WriteLine("User not found");
                 return Unauthorized("Invalid email or password");
             }
 
             if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTime.UtcNow)
             {
+                Console.WriteLine("Account is locked");
                 return Unauthorized("Account is locked. Please try again later.");
             }
 
@@ -156,6 +186,7 @@ namespace BookwormOnline.Controllers
                     user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
                 }
                 await _context.SaveChangesAsync();
+                Console.WriteLine("Invalid password");
                 return Unauthorized("Invalid email or password");
             }
 
@@ -167,6 +198,7 @@ namespace BookwormOnline.Controllers
             HttpContext.Session.SetString("LastActivity", DateTime.UtcNow.ToString());
 
             var token = GenerateJwtToken(user);
+            Console.WriteLine($"Generated JWT Token: {token}");
 
             return Ok(new { Token = token });
         }
