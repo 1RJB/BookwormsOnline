@@ -35,6 +35,9 @@ namespace BookwormOnline.Middleware
             context.Response.ContentType = "application/json";
             context.Response.StatusCode = (int)code;
 
+            // Log the exception
+            Console.WriteLine($"Exception: {exception.Message}");
+
             return context.Response.WriteAsync(result);
         }
     }
