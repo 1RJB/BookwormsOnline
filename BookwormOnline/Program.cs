@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using BookwormOnline.Middleware;
 using AspNetCoreRateLimit;
+using BookwormOnline.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,10 +58,13 @@ builder.Services.AddSession(options =>
     options.Cookie.IsEssential = true;
 });
 
+// Register Antiforgery and ReCaptcha Services
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-XSRF-TOKEN";
 });
+builder.Services.AddHttpClient<ReCaptchaService>();
+builder.Services.AddTransient<ReCaptchaService>();
 
 var app = builder.Build();
 
