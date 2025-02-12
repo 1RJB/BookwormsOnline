@@ -119,7 +119,7 @@ namespace BookwormOnline.Controllers
                 catch (Exception ex) {
                     Console.WriteLine($"Error uploading file: {ex.Message}");
                     Console.WriteLine($"_environment.WebRootPath: {_environment.WebRootPath}");
-                    return BadRequest(new { error = "Error uploading fil" });
+                    return BadRequest(new { error = "Error uploading file" });
                 }
             }
 
