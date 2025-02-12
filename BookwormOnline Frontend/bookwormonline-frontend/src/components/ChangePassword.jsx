@@ -22,7 +22,7 @@ const ChangePassword = () => {
     }
 
     try {
-      const response = await fetch("/api/user/change-password", {
+      const response = await fetch("https://localhost:7177/api/user/change-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -88,4 +88,3 @@ const ChangePassword = () => {
 }
 
 export default ChangePassword
-
