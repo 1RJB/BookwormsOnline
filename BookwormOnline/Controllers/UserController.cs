@@ -13,6 +13,8 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using BookwormOnline.Services;
 using Ganss.Xss;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 
 namespace BookwormOnline.Controllers
 {
@@ -35,7 +37,7 @@ namespace BookwormOnline.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] RegisterModel model)
+        public async Task<IActionResult> Register([FromForm] RegisterModel model)
         {
             if (!ModelState.IsValid)
             {
@@ -48,6 +50,7 @@ namespace BookwormOnline.Controllers
             Console.WriteLine($"ReCaptcha verification result: {isReCaptchaValid}");
             if (!isReCaptchaValid)
             {
+                Console.WriteLine("reCAPTCHA verification failed");
                 return BadRequest("reCAPTCHA verification failed");
             }
 
@@ -85,7 +88,7 @@ namespace BookwormOnline.Controllers
                 return BadRequest("Invalid mobile number format");
             }
 
-            // Handle file upload
+            // Handle file upload for profile picture
             string photoPath = null;
             if (model.Photo != null)
             {
@@ -94,8 +97,14 @@ namespace BookwormOnline.Controllers
                     return BadRequest("Only JPG files are allowed");
                 }
 
+                var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads");
+                if (!Directory.Exists(uploadsFolder))
+                {
+                    Directory.CreateDirectory(uploadsFolder);
+                }
+
                 var fileName = Guid.NewGuid().ToString() + Path.GetExtension(model.Photo.FileName);
-                var filePath = Path.Combine(_environment.WebRootPath, "uploads", fileName);
+                var filePath = Path.Combine(uploadsFolder, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
                 {
@@ -358,6 +367,7 @@ namespace BookwormOnline.Controllers
                    Regex.IsMatch(password, @"[a-z]") &&
                    Regex.IsMatch(password, @"[A-Z]") &&
                    Regex.IsMatch(password, @"[0-9]") &&
+                   Regex.IsMatch(password, @"[@$!%*?&]") &&
                    Regex.IsMatch(password, @"[^a-zA-Z0-9]");
         }
 
