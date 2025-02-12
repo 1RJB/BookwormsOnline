@@ -96,22 +96,31 @@ namespace BookwormOnline.Controllers
                 {
                     return BadRequest("Only JPG files are allowed");
                 }
-
+                try
+                {
                 var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads");
                 if (!Directory.Exists(uploadsFolder))
                 {
                     Directory.CreateDirectory(uploadsFolder);
                 }
 
-                var fileName = Guid.NewGuid().ToString() + Path.GetExtension(model.Photo.FileName);
-                var filePath = Path.Combine(uploadsFolder, fileName);
 
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await model.Photo.CopyToAsync(stream);
+                    var fileName = Guid.NewGuid().ToString() + Path.GetExtension(model.Photo.FileName);
+                    var filePath = Path.Combine(uploadsFolder, fileName);
+
+                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    {
+                        await model.Photo.CopyToAsync(stream);
+                    }
+
+
+                photoPath = fileName;                
                 }
-
-                photoPath = fileName;
+                catch (Exception ex) {
+                    Console.WriteLine($"Error uploading file: {ex.Message}");
+                    Console.WriteLine($"_environment.WebRootPath: {_environment.WebRootPath}");
+                    return StatusCode(500, "Error uploading file");
+                }
             }
 
             var user = new User
