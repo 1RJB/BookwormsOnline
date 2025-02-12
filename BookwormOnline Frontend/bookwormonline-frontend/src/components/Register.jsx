@@ -51,7 +51,11 @@ const Register = () => {
 
       const formDataToSubmit = new FormData()
       Object.keys(formData).forEach((key) => {
-        formDataToSubmit.append(key, formData[key])
+        if (key === "photo" && formData[key]) {
+          formDataToSubmit.append(key, formData[key])
+        } else {
+          formDataToSubmit.append(key, formData[key])
+        }
       })
       formDataToSubmit.append("reCaptchaToken", reCaptchaToken)
 
@@ -106,7 +110,7 @@ const Register = () => {
         </div>
         <div>
           <label htmlFor="photo">Profile Picture (JPG only)</label>
-          <input type="file" id="photo" name="photo" accept="image/jpeg" onChange={handleChange} />
+          <input type="file" id="photo" name="photo" accept="image/jpeg" required onChange={handleChange} />
         </div>
         <button type="submit">Register</button>
       </form>
