@@ -41,13 +41,12 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await fetch("https://localhost:7177/api/user/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(userData),
+        body: userData, // Do not set Content-Type header, let the browser set it
       })
 
       if (!response.ok) {
+        const errorData = await response.json()
+        console.error("Registration error:", errorData)
         throw new Error("Registration failed")
       }
     } catch (error) {
@@ -71,4 +70,3 @@ export const useAuth = () => {
   }
   return context
 }
-
