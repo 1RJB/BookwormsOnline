@@ -5,32 +5,39 @@ import { useAuth } from "../contexts/AuthContext"
 
 const Profile = () => {
   const [profile, setProfile] = useState(null)
-  const { user, logout } = useAuth()
+  const [error, setError] = useState("")
+  const { user } = useAuth()
 
   useEffect(() => {
     const fetchProfile = async () => {
+      setError("")
       try {
-        const response = await fetch("/api/user/profile", {
+        const response = await fetch("https://localhost:7177/api/user/profile", {
+          method: "GET",
           headers: {
             Authorization: `Bearer ${user?.token}`,
           },
+          credentials: "include",
         })
-        if (response.ok) {
-          const data = await response.json()
-          setProfile(data)
+        if (!response.ok) {
+          const msg = await response.text()
+          throw new Error(`Failed to fetch profile: ${msg}`)
         }
-      } catch (error) {
-        console.error("Failed to fetch profile", error)
+        const data = await response.json()
+        setProfile(data)
+      } catch (err) {
+        console.error("Failed to fetch profile", err)
+        setError("Could not load profile data.")
       }
     }
 
-    if (user) {
+    if (user?.token) {
       fetchProfile()
     }
   }, [user])
 
-  const handleLogout = () => {
-    logout()
+  if (error) {
+    return <div>Error: {error}</div>
   }
 
   if (!profile) {
@@ -58,12 +65,15 @@ const Profile = () => {
         </p>
       </div>
       <div className="profile-actions">
-        <button onClick={() => (window.location.href = "/change-password")}>Change Password</button>
-        <button onClick={handleLogout}>Logout</button>
+        <button onClick={() => (window.location.href = "/change-password")}>
+          Change Password
+        </button>
+        <button onClick={() => (window.location.href = "/logout")}>
+          Logout
+        </button>
       </div>
     </div>
   )
 }
 
 export default Profile
-
