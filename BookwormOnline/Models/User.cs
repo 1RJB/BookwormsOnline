@@ -15,7 +15,7 @@ namespace BookwormOnline.Models
         public string LastName { get; set; }
 
         [Required]
-        [StringLength(16)]
+        [StringLength(200)]
         public string CreditCardNo { get; set; }
 
         [Required]
@@ -42,7 +42,7 @@ namespace BookwormOnline.Models
         public DateTime? LastLoginAt { get; set; }
         public int LoginAttempts { get; set; }
         public DateTime? LockoutEnd { get; set; }
-        public string PasswordResetToken { get; set; }
+        public string? PasswordResetToken { get; set; }
         public DateTime? PasswordResetTokenExpiry { get; set; }
         public List<string> PreviousPasswords { get; set; } = new List<string>();
         public DateTime? LastPasswordChangeDate { get; set; }
