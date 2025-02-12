@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await fetch("https://localhost:7177/api/user/register", {
         method: "POST",
-        body: userData, // Do not set Content-Type header, let the browser set it
+        body: userData
       })
 
       if (!response.ok) {
