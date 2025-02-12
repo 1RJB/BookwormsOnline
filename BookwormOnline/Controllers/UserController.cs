@@ -51,21 +51,21 @@ namespace BookwormOnline.Controllers
             if (!isReCaptchaValid)
             {
                 Console.WriteLine("reCAPTCHA verification failed");
-                return BadRequest("reCAPTCHA verification failed");
+                return BadRequest(new { error = "reCAPTCHA verification failed" });
             }
 
             // Check for duplicate email
             if (await _context.Users.AnyAsync(u => u.Email == model.Email))
             {
                 Console.WriteLine("Email already exists");
-                return BadRequest("Email already exists");
+                return BadRequest(new { error = "Email already exists" });
             }
 
             // Validate password complexity
             if (!IsPasswordStrong(model.Password))
             {
                 Console.WriteLine("Password does not meet complexity requirements");
-                return BadRequest("Password does not meet complexity requirements");
+                return BadRequest(new { error = "Password does not meet complexity requirements" });
             }
 
             // Sanitize input
@@ -78,14 +78,14 @@ namespace BookwormOnline.Controllers
             if (!IsValidEmail(model.Email))
             {
                 Console.WriteLine("Invalid email format");
-                return BadRequest("Invalid email format");
+                return BadRequest(new { error = "Invalid email format" });
             }
 
             // Validate mobile number format
             if (!IsValidMobileNumber(model.MobileNo))
             {
                 Console.WriteLine("Invalid mobile number format");
-                return BadRequest("Invalid mobile number format");
+                return BadRequest(new { error = "Invalid mobile number format" });
             }
 
             // Handle file upload for profile picture
@@ -119,7 +119,7 @@ namespace BookwormOnline.Controllers
                 catch (Exception ex) {
                     Console.WriteLine($"Error uploading file: {ex.Message}");
                     Console.WriteLine($"_environment.WebRootPath: {_environment.WebRootPath}");
-                    return StatusCode(500, "Error uploading file");
+                    return BadRequest(new { error = "Error uploading fil" });
                 }
             }
 
@@ -269,24 +269,24 @@ namespace BookwormOnline.Controllers
 
             if (!VerifyPassword(model.CurrentPassword, user.PasswordHash))
             {
-                return BadRequest("Current password is incorrect");
+                return BadRequest(new { error = "Current password is incorrect" });
             }
 
             if (!IsPasswordStrong(model.NewPassword))
             {
-                return BadRequest("New password does not meet complexity requirements");
+                return BadRequest(new { error = "New password does not meet complexity requirements" });
             }
 
             // Check password history
             if (user.PreviousPasswords.Any(p => VerifyPassword(model.NewPassword, p)))
             {
-                return BadRequest("New password must be different from the last 2 passwords");
+                return BadRequest(new { error = "New password must be different from the last 2 passwords" });
             }
 
             // Check minimum password age
             if (user.LastPasswordChangeDate.HasValue && user.LastPasswordChangeDate.Value.AddMinutes(5) > DateTime.UtcNow)
             {
-                return BadRequest("You cannot change your password more than once every 5 minutes");
+                return BadRequest(new { error = "You cannot change your password more than once every 5 minutes" });
             }
 
             // Update password
@@ -334,12 +334,12 @@ namespace BookwormOnline.Controllers
 
             if (user == null || user.PasswordResetTokenExpiry < DateTime.UtcNow)
             {
-                return BadRequest("Invalid or expired reset token");
+                return BadRequest(new { error = "Invalid or expired reset token" });
             }
 
             if (!IsPasswordStrong(model.NewPassword))
             {
-                return BadRequest("New password does not meet complexity requirements");
+                return BadRequest(new { error = "New password does not meet complexity requirements" });
             }
 
             // Update password
