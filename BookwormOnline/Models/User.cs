@@ -36,6 +36,7 @@ namespace BookwormOnline.Models
         [Required]
         public string PasswordHash { get; set; }
 
+        [Required]
         public string PhotoPath { get; set; }
 
         public DateTime CreatedAt { get; set; }
