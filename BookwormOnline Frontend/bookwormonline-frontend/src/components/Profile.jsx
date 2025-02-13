@@ -47,7 +47,7 @@ const Profile = () => {
   }
 
   if (error) {
-    return <div className="error-message">Error: {error}</div>
+    return <div className="error">Error: {error}</div>
   }
 
   if (!profile) {
