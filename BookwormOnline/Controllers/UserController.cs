@@ -192,13 +192,13 @@ namespace BookwormOnline.Controllers
                 if (user == null)
                 {
                     Console.WriteLine("Login attempt failed: User not found");
-                    return Unauthorized("Invalid email or password");
+                    return Unauthorized(new { error = "Invalid email or password" });
                 }
 
                 if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTime.UtcNow)
                 {
                     Console.WriteLine("Login attempt failed: Account is locked");
-                    return Unauthorized("Account is locked. Please try again later.");
+                    return Unauthorized(new { error = "Account is locked. Please try again later." });
                 }
 
                 if (!VerifyPassword(model.Password, user.PasswordHash))
@@ -210,7 +210,7 @@ namespace BookwormOnline.Controllers
                     }
                     await _context.SaveChangesAsync();
                     Console.WriteLine($"Login attempt failed: Invalid password (Attempts: {user.LoginAttempts})");
-                    return Unauthorized("Invalid email or password");
+                    return Unauthorized(new { error = "Invalid email or password" });
                 }
 
                 user.LoginAttempts = 0;
@@ -279,7 +279,7 @@ namespace BookwormOnline.Controllers
                 var user = await _context.Users.FindAsync(userId);
                 if (user == null)
                 {
-                    return NotFound("User not found");
+                    return NotFound(new { error = "User not found" });
                 }
 
 
