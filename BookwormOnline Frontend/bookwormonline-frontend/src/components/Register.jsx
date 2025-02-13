@@ -19,6 +19,7 @@ const Register = () => {
     photo: null,
   })
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const { register } = useAuth()
   const navigate = useNavigate()
   const { executeRecaptcha } = useGoogleReCaptcha()
@@ -60,7 +61,8 @@ const Register = () => {
       formDataToSubmit.append("reCaptchaToken", reCaptchaToken)
 
       await register(formDataToSubmit)
-      navigate("/login")
+      setSuccess("Registration successful. Redirecting to login...")
+      setTimeout(() => navigate("/login"), 3000)
     } catch (err) {
       setError(err.message || "An error occurred. Please try again.")
     }
@@ -70,6 +72,7 @@ const Register = () => {
     <div className="register-form">
       <h2>Register</h2>
       {error && <p className="error">{error}</p>}
+      {success && <p className="success">{success}</p>}
       <form onSubmit={handleSubmit}>
         <div>
           <label htmlFor="firstName">First Name</label>
