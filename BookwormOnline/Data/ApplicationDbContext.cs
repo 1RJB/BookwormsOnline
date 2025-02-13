@@ -11,6 +11,7 @@ namespace BookwormOnline.Data
         }
 
         public DbSet<User> Users { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -23,6 +24,9 @@ namespace BookwormOnline.Data
                 .HasConversion(
                     v => string.Join(',', v),
                     v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList());
+
+            modelBuilder.Entity<AuditLog>()
+                .HasIndex(a => a.Timestamp);
         }
     }
 }
