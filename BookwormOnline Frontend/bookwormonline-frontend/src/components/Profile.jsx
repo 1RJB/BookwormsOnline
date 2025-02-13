@@ -58,6 +58,15 @@ const Profile = () => {
     <div className="profile">
       <h2>Profile</h2>
       <div className="profile-info">
+        {profile.photoPath && (
+          <img
+            src={`${import.meta.env.VITE_FILE_BASE_URL}${profile.photoPath}`}
+            alt="Profile"
+            width="300"
+            height="300"
+            style={{ borderRadius: "50%" }}
+          />
+        )}
         <p>
           <strong>First Name:</strong> {profile.firstName}
         </p>
@@ -76,14 +85,6 @@ const Profile = () => {
         <p>
           <strong>Shipping Address:</strong> {profile.shippingAddress}
         </p>
-        {/* Profile picture */}
-        {profile.photoPath && (
-          <img
-          src={`${import.meta.env.VITE_FILE_BASE_URL}${profile.photoPath}`}
-            alt="Profile"
-            width="100"
-          />
-        )}
       </div>
       <div className="profile-actions">
         <button onClick={() => window.location.href = "/change-password"}>
