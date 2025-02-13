@@ -6,7 +6,7 @@ import { useAuth } from "../contexts/AuthContext"
 const Profile = () => {
   const [profile, setProfile] = useState(null)
   const [error, setError] = useState("")
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -93,7 +93,7 @@ const Profile = () => {
         <button onClick={() => window.location.href = "/change-password"}>
           Change Password
         </button>
-        <button onClick={() => window.location.href = "/logout"}>
+        <button onClick={ logout }>
           Logout
         </button>
       </div>
