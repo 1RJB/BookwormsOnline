@@ -62,8 +62,7 @@ const Register = () => {
       await register(formDataToSubmit)
       navigate("/login")
     } catch (err) {
-      const errorMessage = err.response?.data?.message || "Registration failed. Please try again."
-      setError(errorMessage)
+      setError(err.message || "An error occurred. Please try again.")
     }
   }
 
