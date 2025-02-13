@@ -93,6 +93,11 @@ builder.Services.AddAntiforgery(opts => { opts.HeaderName = "X-XSRF-TOKEN"; });
 builder.Services.AddHttpClient<ReCaptchaService>();
 builder.Services.AddTransient<ReCaptchaService>();
 
+// Additional services
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<AuditService>();
+builder.Services.AddHttpContextAccessor();
+
 // Build the app
 var app = builder.Build();
 
@@ -110,10 +115,21 @@ app.UseCors("AllowFrontend");
 // Use session (must come before authentication)
 app.UseSession();
 
+// Additional security headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Add("X-Frame-Options", "DENY");
+    context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Add("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Add("Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';");
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseStaticFiles(); // Add this if it's not already present
+app.UseStaticFiles();
 
 app.UseIpRateLimiting();
 
