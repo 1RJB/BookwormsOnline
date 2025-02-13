@@ -32,7 +32,7 @@ const Login = () => {
         navigate("/profile")
       }
     } catch (err) {
-      setError("Login failed. Please check your credentials and try again.")
+      setError(err.message || "Login failed. Please try again.")
     }
   }
 
