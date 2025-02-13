@@ -422,7 +422,7 @@ namespace BookwormOnline.Controllers
 
             if (!IsPasswordStrong(model.NewPassword))
             {
-                return BadRequest(new { error = "New password does not meet complexity requirements" });
+                return BadRequest(new { error = "New password does not meet complexity requirements. Needs to be at least 12 characters long and contains at least 1 lowercase letter, 1 uppercase letter, 1 digit, and 1 special character" });
             }
 
             // Update password
