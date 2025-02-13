@@ -24,7 +24,8 @@ const ForgotPassword = () => {
       if (response.ok) {
         setMessage("If your email is registered, you will receive a password reset link.")
       } else {
-        setError("An error occurred. Please try again.")
+        const data = await response.json()
+        setError(data.error || "An error occurred. Please try again.")
       }
     } catch (err) {
       setError("An error occurred. Please try again.")
