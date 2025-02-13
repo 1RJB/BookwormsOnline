@@ -5,51 +5,75 @@ namespace BookwormOnline.Services
 {
     public class EncryptionService
     {
-        private readonly IConfiguration _configuration;
-        private readonly byte[] _key;
-        private readonly byte[] _iv;
+        private readonly string _key;
+        private readonly string _iv;
 
         public EncryptionService(IConfiguration configuration)
         {
-            _configuration = configuration;
-            // Get key and IV from secure configuration
-            _key = Convert.FromBase64String(_configuration["Encryption:Key"]);
-            _iv = Convert.FromBase64String(_configuration["Encryption:IV"]);
+            _key = configuration["Encryption:Key"] ?? throw new ArgumentNullException("Encryption:Key not configured");
+            _iv = configuration["Encryption:IV"] ?? throw new ArgumentNullException("Encryption:IV not configured");
         }
 
-        public string EncryptData(string plainText)
+        public string EncryptAES(string plainText)
         {
-            using var aes = Aes.Create();
-            aes.Key = _key;
-            aes.IV = _iv;
-
-            using var encryptor = aes.CreateEncryptor();
-            byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-
-            using var msEncrypt = new MemoryStream();
-            using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
-            using (var swEncrypt = new StreamWriter(csEncrypt))
+            try
             {
-                swEncrypt.Write(plainText);
-            }
+                byte[] keyBytes = Convert.FromHexString(_key);
+                byte[] ivBytes = Convert.FromHexString(_iv);
+                byte[] plainBytes = Encoding.ASCII.GetBytes(plainText);
 
-            return Convert.ToBase64String(msEncrypt.ToArray());
+                using (Aes aes = Aes.Create())
+                {
+                    aes.Key = keyBytes;
+                    aes.IV = ivBytes;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
+
+                    using ICryptoTransform encryptor = aes.CreateEncryptor();
+                    using MemoryStream msEncrypt = new MemoryStream();
+                    using (CryptoStream csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
+                    {
+                        csEncrypt.Write(plainBytes, 0, plainBytes.Length);
+                    }
+
+                    return Convert.ToHexString(msEncrypt.ToArray());
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Encryption error: {ex.Message}");
+                throw;
+            }
         }
 
-        public string DecryptData(string cipherText)
+        public string DecryptAES(string cipherText)
         {
-            using var aes = Aes.Create();
-            aes.Key = _key;
-            aes.IV = _iv;
+            try
+            {
+                byte[] keyBytes = Convert.FromHexString(_key);
+                byte[] ivBytes = Convert.FromHexString(_iv);
+                byte[] cipherBytes = Convert.FromHexString(cipherText);
 
-            using var decryptor = aes.CreateDecryptor();
-            byte[] cipherBytes = Convert.FromBase64String(cipherText);
+                using (Aes aes = Aes.Create())
+                {
+                    aes.Key = keyBytes;
+                    aes.IV = ivBytes;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
 
-            using var msDecrypt = new MemoryStream(cipherBytes);
-            using var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
-            using var srDecrypt = new StreamReader(csDecrypt);
+                    using ICryptoTransform decryptor = aes.CreateDecryptor();
+                    using MemoryStream msDecrypt = new MemoryStream(cipherBytes);
+                    using CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read);
+                    using StreamReader srDecrypt = new StreamReader(csDecrypt, Encoding.ASCII);
 
-            return srDecrypt.ReadToEnd();
+                    return srDecrypt.ReadToEnd();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Decryption error: {ex.Message}");
+                throw;
+            }
         }
 
         public static (string Key, string IV) GenerateNewKeyAndIV()
@@ -58,8 +82,8 @@ namespace BookwormOnline.Services
             aes.GenerateKey();
             aes.GenerateIV();
             return (
-                Convert.ToBase64String(aes.Key),
-                Convert.ToBase64String(aes.IV)
+                Convert.ToHexString(aes.Key),
+                Convert.ToHexString(aes.IV)
             );
         }
     }
