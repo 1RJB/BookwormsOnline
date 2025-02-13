@@ -46,14 +46,14 @@ const ResetPassword = () => {
   }
 
   if (!resetToken) {
-    return <div className="text-red-500">Invalid reset link. Please request a new password reset.</div>
+    return <div className="error">Invalid reset link. Please request a new password reset.</div>
   }
 
   return (
-    <div className="max-w-md mx-auto">
-      <h2 className="text-2xl font-bold mb-4">Reset Password</h2>
-      {error && <p className="text-red-500 mb-4">{error}</p>}
-      {success && <p className="text-green-500 mb-4">{success}</p>}
+    <div className="reset-password">
+      <h2>Reset Password</h2>
+      {error && <p className="error">{error}</p>}
+      {success && <p className="success">{success}</p>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="newPassword">New Password</label>
