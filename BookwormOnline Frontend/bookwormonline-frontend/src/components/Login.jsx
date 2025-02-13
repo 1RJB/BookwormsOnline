@@ -29,7 +29,7 @@ const Login = () => {
       if (result.requiresTwoFactor) {
         navigate("/verify-2fa")
       } else {
-      navigate("/profile")
+        navigate("/profile")
       }
     } catch (err) {
       setError("Login failed. Please check your credentials and try again.")
@@ -65,4 +65,3 @@ const Login = () => {
 }
 
 export default Login
-
