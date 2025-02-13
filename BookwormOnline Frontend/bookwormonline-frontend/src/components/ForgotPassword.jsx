@@ -32,10 +32,10 @@ const ForgotPassword = () => {
   }
 
   return (
-    <div className="max-w-md mx-auto">
-      <h2 className="text-2xl font-bold mb-4">Forgot Password</h2>
-      {message && <p className="text-green-500 mb-4">{message}</p>}
-      {error && <p className="text-red-500 mb-4">{error}</p>}
+    <div className="forgot-password">
+      <h2>Forgot Password</h2>
+      {message && <p className="success">{message}</p>}
+      {error && <p className="error">{error}</p>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="email">Email</label>
