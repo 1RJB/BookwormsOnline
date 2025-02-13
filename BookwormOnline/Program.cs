@@ -97,6 +97,8 @@ builder.Services.AddTransient<ReCaptchaService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<TwoFactorService>();
+builder.Services.AddScoped<EncryptionService>();
 
 // Build the app
 var app = builder.Build();
