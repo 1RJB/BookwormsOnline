@@ -1,20 +1,21 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BookwormOnline.Data;
 using BookwormOnline.Models;
+using BookwormOnline.Services;
+using Ganss.Xss;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using System.Security.Cryptography;
-using System.Text.RegularExpressions;
-using BookwormOnline.Services;
-using Ganss.Xss;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Hosting;
 
 namespace BookwormOnline.Controllers
 {
@@ -32,7 +33,18 @@ namespace BookwormOnline.Controllers
         private readonly EncryptionService _encryptionService;
         private readonly TwoFactorService _twoFactorService;
 
-        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IWebHostEnvironment environment, IEmailService emailService, AuditService auditService, EncryptionService encryptionService, TwoFactorService twoFactorService)
+        // A dictionary storing user ID -> SessionInfo containing session ID and expiry
+        // This enforces single-login and session expiration server-side.
+        private static readonly Dictionary<int, SessionInfo> _userSessions = new();
+
+        public UserController(ApplicationDbContext context,
+                              IConfiguration configuration,
+                              ReCaptchaService reCaptchaService,
+                              IWebHostEnvironment environment,
+                              IEmailService emailService,
+                              AuditService auditService,
+                              EncryptionService encryptionService,
+                              TwoFactorService twoFactorService)
         {
             _context = context;
             _configuration = configuration;
@@ -55,7 +67,6 @@ namespace BookwormOnline.Controllers
 
             // Verify reCAPTCHA token
             var isReCaptchaValid = await _reCaptchaService.VerifyToken(model.ReCaptchaToken);
-            Console.WriteLine($"ReCaptcha verification result: {isReCaptchaValid}");
             if (!isReCaptchaValid)
             {
                 Console.WriteLine("reCAPTCHA verification failed");
@@ -73,7 +84,7 @@ namespace BookwormOnline.Controllers
             if (!IsPasswordStrong(model.Password))
             {
                 Console.WriteLine("Password does not meet complexity requirements");
-                return BadRequest(new { error = "Password does not meet complexity requirements. Needs to be at least 12 characters long and contains at least 1 lowercase letter, 1 uppercase letter, 1 digit, and 1 special character" });
+                return BadRequest(new { error = "Password does not meet complexity requirements. At least 12 chars, 1 uppercase, 1 lowercase, 1 digit, and 1 special character." });
             }
 
             // Sanitize input
@@ -87,8 +98,8 @@ namespace BookwormOnline.Controllers
             {
                 Console.WriteLine("Invalid credit card number");
                 return BadRequest(new { error = "Invalid credit card number" });
-            }            
-            
+            }
+
             // Validate mobile number format
             if (!IsValidMobileNumber(model.MobileNo))
             {
@@ -103,7 +114,7 @@ namespace BookwormOnline.Controllers
                 return BadRequest(new { error = "Invalid email format" });
             }
 
-            // Handle file upload for profile picture
+            // Handle file upload for profile picture (only JPG allowed here)
             string photoPath = "";
             if (model.Photo != null)
             {
@@ -113,12 +124,11 @@ namespace BookwormOnline.Controllers
                 }
                 try
                 {
-                var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads");
-                if (!Directory.Exists(uploadsFolder))
-                {
-                    Directory.CreateDirectory(uploadsFolder);
-                }
-
+                    var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads");
+                    if (!Directory.Exists(uploadsFolder))
+                    {
+                        Directory.CreateDirectory(uploadsFolder);
+                    }
 
                     var fileName = Guid.NewGuid().ToString() + Path.GetExtension(model.Photo.FileName);
                     var filePath = Path.Combine(uploadsFolder, fileName);
@@ -128,12 +138,11 @@ namespace BookwormOnline.Controllers
                         await model.Photo.CopyToAsync(stream);
                     }
 
-
-                photoPath = fileName;                
+                    photoPath = fileName;
                 }
-                catch (Exception ex) {
+                catch (Exception ex)
+                {
                     Console.WriteLine($"Error uploading file: {ex.Message}");
-                    Console.WriteLine($"_environment.WebRootPath: {_environment.WebRootPath}");
                     return BadRequest(new { error = "Error uploading file" });
                 }
             }
@@ -153,34 +162,14 @@ namespace BookwormOnline.Controllers
                 PhotoPath = photoPath
             };
 
-            _context.Users.Add(user);
+            // Add initial password to history
             user.PreviousPasswords.Add(user.PasswordHash);
+
+            // Save new user
+            _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
             return Ok("User registered successfully");
-        }
-
-        private bool IsValidCreditCardNumber(string creditCardNo)
-        {
-            return Regex.IsMatch(creditCardNo, @"^\d{13,19}$");
-        }
-
-        private bool IsValidEmail(string email)
-        {
-            try
-            {
-                var addr = new System.Net.Mail.MailAddress(email);
-                return addr.Address == email;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool IsValidMobileNumber(string mobileNo)
-        {
-            return Regex.IsMatch(mobileNo, @"^\d{8,8}$");
         }
 
         [HttpPost("login")]
@@ -189,19 +178,20 @@ namespace BookwormOnline.Controllers
             try
             {
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
-
                 if (user == null)
                 {
                     Console.WriteLine("Login attempt failed: User not found");
                     return Unauthorized(new { error = "Invalid email or password" });
                 }
 
-                if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTime.UtcNow)
+                // Check for lockout
+                if (user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTime.UtcNow)
                 {
                     Console.WriteLine("Login attempt failed: Account is locked");
                     return Unauthorized(new { error = "Account is locked. Please try again later." });
                 }
 
+                // Validate password
                 if (!VerifyPassword(model.Password, user.PasswordHash))
                 {
                     user.LoginAttempts++;
@@ -217,14 +207,13 @@ namespace BookwormOnline.Controllers
                 user.LoginAttempts = 0;
                 user.LastLoginAt = DateTime.UtcNow;
 
-                // Generate and send 2FA code
+                // Generate and send 2FA code (if implemented)
                 await _twoFactorService.GenerateAndSendCodeAsync(user);
-
                 await _context.SaveChangesAsync();
 
-                var token = GenerateJwtToken(user);
                 Console.WriteLine($"Login successful for user: {user.Email}");
 
+                // Client expects { requiresTwoFactor = true }, then calls verify-2fa
                 return Ok(new { requiresTwoFactor = true });
             }
             catch (Exception ex)
@@ -245,7 +234,7 @@ namespace BookwormOnline.Controllers
                 return BadRequest(new { error = "Invalid or expired code" });
             }
 
-            if (user.TwoFactorCode == null || !_twoFactorService.VerifyCode(user.TwoFactorCode, model.Code))
+            if (string.IsNullOrEmpty(user.TwoFactorCode) || !_twoFactorService.VerifyCode(user.TwoFactorCode, model.Code))
             {
                 return BadRequest(new { error = "Invalid code" });
             }
@@ -255,8 +244,16 @@ namespace BookwormOnline.Controllers
             user.TwoFactorCodeExpiry = null;
             await _context.SaveChangesAsync();
 
-            // Generate JWT token and complete login
+            // Generate JWT token
             var token = GenerateJwtToken(user);
+
+            // Record the single session in the dictionary with an expiry (e.g., 30 minutes).
+            var sessionId = HttpContext.Session.Id;
+            lock (_userSessions)
+            {
+                _userSessions[user.Id] = new SessionInfo(sessionId, DateTime.UtcNow.AddMinutes(30));
+            }
+
             return Ok(new { token });
         }
 
@@ -264,8 +261,57 @@ namespace BookwormOnline.Controllers
         [HttpPost("logout")]
         public IActionResult Logout()
         {
+            var userIdString = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (int.TryParse(userIdString, out var userId))
+            {
+                lock (_userSessions)
+                {
+                    if (_userSessions.ContainsKey(userId))
+                    {
+                        _userSessions.Remove(userId);
+                    }
+                }
+            }
+
             HttpContext.Session.Clear();
             return Ok("Logged out successfully");
+        }
+
+        [Authorize]
+        [HttpPost("verify-session")]
+        public IActionResult VerifySession()
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+                throw new InvalidOperationException("User ID not found in token"));
+            var currentSessionId = HttpContext.Session.Id;
+            SessionInfo storedSession;
+
+            lock (_userSessions)
+            {
+                if (!_userSessions.TryGetValue(userId, out storedSession))
+                {
+                    // No stored session info means the user hasn't completed 2FA or session expired
+                    return Unauthorized(new { error = "Session expired or not found. Please log in again." });
+                }
+
+                // Check if the stored session is the same as current, and not expired
+                if (!string.Equals(storedSession.SessionId, currentSessionId, StringComparison.Ordinal))
+                {
+                    return Conflict(new { error = "Another session is active. Logout from the other session to continue." });
+                }
+                if (DateTime.UtcNow > storedSession.Expiry)
+                {
+                    // Session has expired
+                    _userSessions.Remove(userId);
+                    HttpContext.Session.Clear();
+                    return Unauthorized(new { error = "Your session has timed out. Please log in again." });
+                }
+
+                // If valid, refresh the session expiry on each verify call
+                storedSession.Expiry = DateTime.UtcNow.AddMinutes(30);
+            }
+
+            return Ok();
         }
 
         [Authorize]
@@ -282,7 +328,6 @@ namespace BookwormOnline.Controllers
                 {
                     return NotFound(new { error = "User not found" });
                 }
-
 
                 // Decrypt sensitive data
                 user.CreditCardNo = DecryptData(user.CreditCardNo);
@@ -315,7 +360,6 @@ namespace BookwormOnline.Controllers
                 throw new InvalidOperationException("User ID not found in token"));
 
             var user = await _context.Users.FindAsync(userId);
-
             if (user == null)
             {
                 return NotFound();
@@ -328,7 +372,7 @@ namespace BookwormOnline.Controllers
 
             if (!IsPasswordStrong(model.NewPassword))
             {
-                return BadRequest(new { error = "New password does not meet complexity requirements. Needs to be at least 12 characters long and contains at least 1 lowercase letter, 1 uppercase letter, 1 digit, and 1 special character" });
+                return BadRequest(new { error = "New password does not meet complexity requirements. At least 12 chars, 1 uppercase, 1 lowercase, 1 digit, and 1 special character." });
             }
 
             // Check password history
@@ -347,7 +391,7 @@ namespace BookwormOnline.Controllers
             user.PasswordHash = HashPassword(model.NewPassword);
             user.LastPasswordChangeDate = DateTime.UtcNow;
 
-            // Update password history
+            // Add new password to history
             user.PreviousPasswords.Add(user.PasswordHash);
             if (user.PreviousPasswords.Count > 2)
             {
@@ -395,34 +439,6 @@ namespace BookwormOnline.Controllers
             return Ok("If your email is registered, you will receive a reset link");
         }
 
-        private readonly Dictionary<int, HashSet<string>> _userSessions = new();
-
-        [Authorize]
-        [HttpPost("verify-session")]
-        public IActionResult VerifySession()
-        {
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? 
-                throw new InvalidOperationException("User ID not found in token"));
-            var sessionId = HttpContext.Session.Id;
-
-            lock (_userSessions)
-            {
-                if (!_userSessions.ContainsKey(userId))
-                {
-                    _userSessions[userId] = new HashSet<string>();
-                }
-
-                if (_userSessions[userId].Count > 0 && !_userSessions[userId].Contains(sessionId))
-                {
-                    return Conflict(new { error = "Another session is active. Logout from the other session to login here." });
-                }
-
-                _userSessions[userId].Add(sessionId);
-            }
-
-            return Ok();
-        }
-
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordModel model)
         {
@@ -435,7 +451,7 @@ namespace BookwormOnline.Controllers
 
             if (!IsPasswordStrong(model.NewPassword))
             {
-                return BadRequest(new { error = "New password does not meet complexity requirements. Needs to be at least 12 characters long and contains at least 1 lowercase letter, 1 uppercase letter, 1 digit, and 1 special character" });
+                return BadRequest(new { error = "New password does not meet complexity requirements. At least 12 chars, 1 uppercase, 1 lowercase, 1 digit, and 1 special character." });
             }
 
             // Update password
@@ -449,6 +465,8 @@ namespace BookwormOnline.Controllers
             return Ok("Password reset successfully");
         }
 
+        // Helper classes and methods
+
         private bool IsPasswordStrong(string password)
         {
             return password.Length >= 12 &&
@@ -457,6 +475,29 @@ namespace BookwormOnline.Controllers
                    Regex.IsMatch(password, @"[0-9]") &&
                    Regex.IsMatch(password, @"[@$!%*?&]") &&
                    Regex.IsMatch(password, @"[^a-zA-Z0-9]");
+        }
+
+        private bool IsValidCreditCardNumber(string creditCardNo)
+        {
+            return Regex.IsMatch(creditCardNo, @"^\d{13,19}$");
+        }
+
+        private bool IsValidEmail(string email)
+        {
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(email);
+                return addr.Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsValidMobileNumber(string mobileNo)
+        {
+            return Regex.IsMatch(mobileNo, @"^\d{8,8}$");
         }
 
         private string HashPassword(string password)
@@ -492,8 +533,8 @@ namespace BookwormOnline.Controllers
             {
                 throw new InvalidOperationException("JWT key is not configured.");
             }
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
@@ -504,6 +545,19 @@ namespace BookwormOnline.Controllers
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        // Holds session ID and an expiry time
+        private class SessionInfo
+        {
+            public string SessionId { get; set; }
+            public DateTime Expiry { get; set; }
+
+            public SessionInfo(string sessionId, DateTime expiry)
+            {
+                SessionId = sessionId;
+                Expiry = expiry;
+            }
         }
     }
 }
