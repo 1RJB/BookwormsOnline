@@ -6,6 +6,7 @@ const AuthContext = createContext(undefined)
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
+  const [email, setEmail] = useState(null) // Store email during 2FA process
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -29,11 +30,43 @@ export const AuthProvider = ({ children }) => {
       }
 
       const data = await response.json()
+      
+      if (data.requiresTwoFactor) {
+        setEmail(email) // Store email for 2FA verification
+        return { requiresTwoFactor: true }
+      }
+
       localStorage.setItem("token", data.token)
       setUser({ token: data.token })
+      setEmail(null)
       return data
     } catch (error) {
       console.error("Login error:", error)
+      throw error
+    }
+  }
+
+  const verifyTwoFactor = async (code) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/verify-2fa`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, code }),
+      })
+
+      if (!response.ok) {
+        throw new Error("2FA verification failed")
+      }
+
+      const data = await response.json()
+      localStorage.setItem("token", data.token)
+      setUser({ token: data.token })
+      setEmail(null)
+      return data
+    } catch (error) {
+      console.error("2FA verification error:", error)
       throw error
     }
   }
@@ -42,7 +75,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/register`, {
         method: "POST",
-        body: userData // Keep as FormData for file upload support
+        body: userData
       })
 
       if (!response.ok) {
@@ -59,11 +92,12 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem("token")
     setUser(null)
+    setEmail(null)
     window.location.href = "/login"
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, email, login, register, logout, verifyTwoFactor }}>
       {children}
     </AuthContext.Provider>
   )
