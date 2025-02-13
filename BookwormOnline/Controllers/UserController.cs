@@ -73,7 +73,7 @@ namespace BookwormOnline.Controllers
             if (!IsPasswordStrong(model.Password))
             {
                 Console.WriteLine("Password does not meet complexity requirements");
-                return BadRequest(new { error = "Password does not meet complexity requirements" });
+                return BadRequest(new { error = "Password does not meet complexity requirements. Needs to be at least 12 characters long and contains at least 1 lowercase letter, 1 uppercase letter, 1 digit, and 1 special character" });
             }
 
             // Sanitize input
@@ -82,18 +82,25 @@ namespace BookwormOnline.Controllers
             model.BillingAddress = _sanitizer.Sanitize(model.BillingAddress);
             model.ShippingAddress = _sanitizer.Sanitize(model.ShippingAddress);
 
-            // Validate email format
-            if (!IsValidEmail(model.Email))
+            // Validate credit card number
+            if (!IsValidCreditCardNumber(model.CreditCardNo))
             {
-                Console.WriteLine("Invalid email format");
-                return BadRequest(new { error = "Invalid email format" });
-            }
-
+                Console.WriteLine("Invalid credit card number");
+                return BadRequest(new { error = "Invalid credit card number" });
+            }            
+            
             // Validate mobile number format
             if (!IsValidMobileNumber(model.MobileNo))
             {
                 Console.WriteLine("Invalid mobile number format");
                 return BadRequest(new { error = "Invalid mobile number format" });
+            }
+
+            // Validate email format
+            if (!IsValidEmail(model.Email))
+            {
+                Console.WriteLine("Invalid email format");
+                return BadRequest(new { error = "Invalid email format" });
             }
 
             // Handle file upload for profile picture
@@ -152,6 +159,11 @@ namespace BookwormOnline.Controllers
             return Ok("User registered successfully");
         }
 
+        private bool IsValidCreditCardNumber(string creditCardNo)
+        {
+            return Regex.IsMatch(creditCardNo, @"^\d{13,19}$");
+        }
+
         private bool IsValidEmail(string email)
         {
             try
@@ -167,7 +179,7 @@ namespace BookwormOnline.Controllers
 
         private bool IsValidMobileNumber(string mobileNo)
         {
-            return Regex.IsMatch(mobileNo, @"^\+?[1-9]\d{1,14}$");
+            return Regex.IsMatch(mobileNo, @"^\+?[0-9]\d{8}$");
         }
 
         [HttpPost("login")]
@@ -315,7 +327,7 @@ namespace BookwormOnline.Controllers
 
             if (!IsPasswordStrong(model.NewPassword))
             {
-                return BadRequest(new { error = "New password does not meet complexity requirements" });
+                return BadRequest(new { error = "New password does not meet complexity requirements. Needs to be at least 12 characters long and contains at least 1 lowercase letter, 1 uppercase letter, 1 digit, and 1 special character" });
             }
 
             // Check password history
