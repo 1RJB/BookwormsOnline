@@ -173,46 +173,53 @@ namespace BookwormOnline.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginModel model)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
-
-            if (user == null)
+            try
             {
-                Console.WriteLine("User not found");
-                return Unauthorized("Invalid email or password");
-            }
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
 
-            if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTime.UtcNow)
-            {
-                Console.WriteLine("Account is locked");
-                return Unauthorized("Account is locked. Please try again later.");
-            }
-
-            if (!VerifyPassword(model.Password, user.PasswordHash))
-            {
-                user.LoginAttempts++;
-                if (user.LoginAttempts >= 3)
+                if (user == null)
                 {
-                    user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+                    Console.WriteLine("Login attempt failed: User not found");
+                    return Unauthorized("Invalid email or password");
                 }
+
+                if (user.LockoutEnd.HasValue && user.LockoutEnd > DateTime.UtcNow)
+                {
+                    Console.WriteLine("Login attempt failed: Account is locked");
+                    return Unauthorized("Account is locked. Please try again later.");
+                }
+
+                if (!VerifyPassword(model.Password, user.PasswordHash))
+                {
+                    user.LoginAttempts++;
+                    if (user.LoginAttempts >= 3)
+                    {
+                        user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+                    }
+                    await _context.SaveChangesAsync();
+                    Console.WriteLine($"Login attempt failed: Invalid password (Attempts: {user.LoginAttempts})");
+                    return Unauthorized("Invalid email or password");
+                }
+
+                user.LoginAttempts = 0;
+                user.LastLoginAt = DateTime.UtcNow;
+
+                // Generate and send 2FA code
+                await _twoFactorService.GenerateAndSendCodeAsync(user);
+
                 await _context.SaveChangesAsync();
-                Console.WriteLine("Invalid password");
-                return Unauthorized("Invalid email or password");
+
+                var token = GenerateJwtToken(user);
+                Console.WriteLine($"Login successful for user: {user.Email}");
+
+                return Ok(new { requiresTwoFactor = true });
             }
-
-            user.LoginAttempts = 0;
-            user.LastLoginAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            HttpContext.Session.SetString("UserId", user.Id.ToString());
-            HttpContext.Session.SetString("LastActivity", DateTime.UtcNow.ToString());
-
-            var token = GenerateJwtToken(user);
-            Console.WriteLine($"Generated JWT Token: {token}");
-
-            await _twoFactorService.GenerateAndSendCodeAsync(user);
-            await _auditService.LogAction(user.Id, "Login", "User logged in successfully");
-
-            return Ok(new { Token = token });
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Login error: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, "An error occurred during login");
+            }
         }
 
         [HttpPost("verify-2fa")]
