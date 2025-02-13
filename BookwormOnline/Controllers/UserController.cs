@@ -29,8 +29,10 @@ namespace BookwormOnline.Controllers
         private readonly IWebHostEnvironment _environment;
         private readonly IEmailService _emailService;
         private readonly AuditService _auditService;
+        private readonly EncryptionService _encryptionService;
+        private readonly TwoFactorService _twoFactorService;
 
-        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IWebHostEnvironment environment, IEmailService emailService, AuditService auditService)
+        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IWebHostEnvironment environment, IEmailService emailService, AuditService auditService, EncryptionService encryptionService, TwoFactorService twoFactorService)
         {
             _context = context;
             _configuration = configuration;
@@ -38,6 +40,8 @@ namespace BookwormOnline.Controllers
             _environment = environment;
             _emailService = emailService;
             _auditService = auditService;
+            _encryptionService = encryptionService;
+            _twoFactorService = twoFactorService;
         }
 
         [HttpPost("register")]
@@ -93,7 +97,7 @@ namespace BookwormOnline.Controllers
             }
 
             // Handle file upload for profile picture
-            string photoPath = null;
+            string photoPath = "";
             if (model.Photo != null)
             {
                 if (!model.Photo.ContentType.StartsWith("image/jpeg"))
@@ -166,20 +170,6 @@ namespace BookwormOnline.Controllers
             return Regex.IsMatch(mobileNo, @"^\+?[1-9]\d{1,14}$");
         }
 
-        public class RegisterModel
-        {
-            public required string FirstName { get; set; }
-            public required string LastName { get; set; }
-            public required string CreditCardNo { get; set; }
-            public required string MobileNo { get; set; }
-            public required string BillingAddress { get; set; }
-            public required string ShippingAddress { get; set; }
-            public required string Email { get; set; }
-            public required string Password { get; set; }
-            public required string ReCaptchaToken { get; set; }
-            public IFormFile Photo { get; set; }
-        }
-
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginModel model)
         {
@@ -219,9 +209,35 @@ namespace BookwormOnline.Controllers
             var token = GenerateJwtToken(user);
             Console.WriteLine($"Generated JWT Token: {token}");
 
+            await _twoFactorService.GenerateAndSendCodeAsync(user);
             await _auditService.LogAction(user.Id, "Login", "User logged in successfully");
 
             return Ok(new { Token = token });
+        }
+
+        [HttpPost("verify-2fa")]
+        public async Task<IActionResult> VerifyTwoFactor([FromBody] TwoFactorModel model)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
+
+            if (user == null || user.TwoFactorCodeExpiry < DateTime.UtcNow)
+            {
+                return BadRequest(new { error = "Invalid or expired code" });
+            }
+
+            if (user.TwoFactorCode == null || !_twoFactorService.VerifyCode(user.TwoFactorCode, model.Code))
+            {
+                return BadRequest(new { error = "Invalid code" });
+            }
+
+            // Clear 2FA code
+            user.TwoFactorCode = null;
+            user.TwoFactorCodeExpiry = null;
+            await _context.SaveChangesAsync();
+
+            // Generate JWT token and complete login
+            var token = GenerateJwtToken(user);
+            return Ok(new { token });
         }
 
         [Authorize]
@@ -275,7 +291,9 @@ namespace BookwormOnline.Controllers
         [HttpPost("change-password")]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordModel model)
         {
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+                throw new InvalidOperationException("User ID not found in token"));
+
             var user = await _context.Users.FindAsync(userId);
 
             if (user == null)
@@ -341,15 +359,16 @@ namespace BookwormOnline.Controllers
                 model.Email,
                 "Password Reset Request",
                 $@"
-        <html>
-            <body>
-                <h2>Password Reset Request</h2>
-                <p>You requested to reset your password. Click the link below to proceed:</p>
-                <p><a href='{resetLink}'>{resetLink}</a></p>
-                <p>This link will expire in 5 minutes.</p>
-                <p>If you did not request this password reset, please ignore this email.</p>
-            </body>
-        </html>");
+                <html>
+                    <body>
+                        <h2>Password Reset Request</h2>
+                        <p>You requested to reset your password. Click the link below to proceed:</p>
+                        <p><a href='{resetLink}'>{resetLink}</a></p>
+                        <p>This link will expire in 5 minutes.</p>
+                        <p>If you did not request this password reset, please ignore this email.</p>
+                    </body>
+                </html>"
+            );
 
             await _auditService.LogAction(user.Id, "PasswordReset", "Password reset requested");
 
@@ -362,7 +381,8 @@ namespace BookwormOnline.Controllers
         [HttpPost("verify-session")]
         public IActionResult VerifySession()
         {
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? 
+                throw new InvalidOperationException("User ID not found in token"));
             var sessionId = HttpContext.Session.Id;
 
             lock (_userSessions)
@@ -409,23 +429,6 @@ namespace BookwormOnline.Controllers
             return Ok("Password reset successfully");
         }
 
-        public class ChangePasswordModel
-        {
-            public required string CurrentPassword { get; set; }
-            public required string NewPassword { get; set; }
-        }
-
-        public class ForgotPasswordModel
-        {
-            public required string Email { get; set; }
-        }
-
-        public class ResetPasswordModel
-        {
-            public required string ResetToken { get; set; }
-            public required string NewPassword { get; set; }
-        }
-
         private bool IsPasswordStrong(string password)
         {
             return password.Length >= 12 &&
@@ -448,16 +451,12 @@ namespace BookwormOnline.Controllers
 
         private string EncryptData(string data)
         {
-            // Implement encryption logic here
-            // For demonstration purposes, we'll use a simple Base64 encoding
-            return Convert.ToBase64String(Encoding.UTF8.GetBytes(data));
+            return _encryptionService.EncryptData(data);
         }
 
         private string DecryptData(string encryptedData)
         {
-            // Implement decryption logic here
-            // For demonstration purposes, we'll use a simple Base64 decoding
-            return Encoding.UTF8.GetString(Convert.FromBase64String(encryptedData));
+            return _encryptionService.DecryptData(encryptedData);
         }
 
         private string GenerateJwtToken(User user)
@@ -468,7 +467,13 @@ namespace BookwormOnline.Controllers
                 new Claim(ClaimTypes.Email, user.Email)
             };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+            var jwtKey = _configuration["Jwt:Key"];
+            if (string.IsNullOrEmpty(jwtKey))
+            {
+                throw new InvalidOperationException("JWT key is not configured.");
+            }
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
@@ -480,11 +485,5 @@ namespace BookwormOnline.Controllers
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-    }
-
-    public class LoginModel
-    {
-        public required string Email { get; set; }
-        public required string Password { get; set; }
     }
 }
