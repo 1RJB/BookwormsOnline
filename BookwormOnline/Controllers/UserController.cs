@@ -27,13 +27,17 @@ namespace BookwormOnline.Controllers
         private readonly ReCaptchaService _reCaptchaService;
         private readonly HtmlSanitizer _sanitizer = new HtmlSanitizer();
         private readonly IWebHostEnvironment _environment;
+        private readonly IEmailService _emailService;
+        private readonly AuditService _auditService;
 
-        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IWebHostEnvironment environment)
+        public UserController(ApplicationDbContext context, IConfiguration configuration, ReCaptchaService reCaptchaService, IWebHostEnvironment environment, IEmailService emailService, AuditService auditService)
         {
             _context = context;
             _configuration = configuration;
             _reCaptchaService = reCaptchaService;
             _environment = environment;
+            _emailService = emailService;
+            _auditService = auditService;
         }
 
         [HttpPost("register")]
@@ -215,6 +219,8 @@ namespace BookwormOnline.Controllers
             var token = GenerateJwtToken(user);
             Console.WriteLine($"Generated JWT Token: {token}");
 
+            await _auditService.LogAction(user.Id, "Login", "User logged in successfully");
+
             return Ok(new { Token = token });
         }
 
@@ -230,29 +236,39 @@ namespace BookwormOnline.Controllers
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
-            // Check session timeout
-            var lastActivity = HttpContext.Session.GetString("LastActivity");
-            if (string.IsNullOrEmpty(lastActivity) || DateTime.Parse(lastActivity).AddMinutes(30) < DateTime.UtcNow)
+            try
             {
-                HttpContext.Session.Clear();
-                return Unauthorized("Session expired");
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+                    throw new InvalidOperationException("User ID not found in token"));
+
+                var user = await _context.Users.FindAsync(userId);
+                if (user == null)
+                {
+                    return NotFound("User not found");
+                }
+
+
+                // Decrypt sensitive data
+                user.CreditCardNo = DecryptData(user.CreditCardNo);
+
+                return Ok(new
+                {
+                    user.Id,
+                    user.FirstName,
+                    user.LastName,
+                    user.Email,
+                    user.MobileNo,
+                    user.CreditCardNo,
+                    user.BillingAddress,
+                    user.ShippingAddress,
+                    user.PhotoPath
+                });
             }
-
-            // Update last activity
-            HttpContext.Session.SetString("LastActivity", DateTime.UtcNow.ToString());
-
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
-            var user = await _context.Users.FindAsync(userId);
-
-            if (user == null)
+            catch (Exception ex)
             {
-                return NotFound();
+                Console.WriteLine($"Error in GetProfile: {ex.Message}");
+                return StatusCode(500, "An error occurred while fetching the profile");
             }
-
-            // Decrypt sensitive data
-            user.CreditCardNo = DecryptData(user.CreditCardNo);
-
-            return Ok(user);
         }
 
         [Authorize]
@@ -309,22 +325,62 @@ namespace BookwormOnline.Controllers
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordModel model)
         {
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == model.Email);
-
             if (user == null)
-            {
-                // Don't reveal that the user does not exist
-                return Ok("If your email is registered, you will receive a password reset link");
-            }
+                return Ok("If your email is registered, you will receive a reset link");
 
-            // Generate password reset token
-            user.PasswordResetToken = Guid.NewGuid().ToString();
+            var token = Guid.NewGuid().ToString();
+            user.PasswordResetToken = token;
             user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1);
-
             await _context.SaveChangesAsync();
 
-            // TODO: Send email with password reset link
-            // For demo purposes, we'll just return the token
-            return Ok(new { ResetToken = user.PasswordResetToken });
+            // Use the frontend URL from configuration
+            var frontendUrl = _configuration["Frontend:BaseUrl"] ?? "http://localhost:3000";
+            var resetLink = $"{frontendUrl}/reset-password?token={token}";
+
+            await _emailService.SendEmailAsync(
+                model.Email,
+                "Password Reset Request",
+                $@"
+        <html>
+            <body>
+                <h2>Password Reset Request</h2>
+                <p>You requested to reset your password. Click the link below to proceed:</p>
+                <p><a href='{resetLink}'>{resetLink}</a></p>
+                <p>This link will expire in 1 hour.</p>
+                <p>If you did not request this password reset, please ignore this email.</p>
+            </body>
+        </html>");
+
+            await _auditService.LogAction(user.Id, "PasswordReset", "Password reset requested");
+
+            return Ok("If your email is registered, you will receive a reset link");
+        }
+
+        private readonly Dictionary<int, HashSet<string>> _userSessions = new();
+
+        [Authorize]
+        [HttpPost("verify-session")]
+        public IActionResult VerifySession()
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var sessionId = HttpContext.Session.Id;
+
+            lock (_userSessions)
+            {
+                if (!_userSessions.ContainsKey(userId))
+                {
+                    _userSessions[userId] = new HashSet<string>();
+                }
+
+                if (_userSessions[userId].Count > 0 && !_userSessions[userId].Contains(sessionId))
+                {
+                    return StatusCode(401, "Another session is active");
+                }
+
+                _userSessions[userId].Add(sessionId);
+            }
+
+            return Ok();
         }
 
         [HttpPost("reset-password")]
