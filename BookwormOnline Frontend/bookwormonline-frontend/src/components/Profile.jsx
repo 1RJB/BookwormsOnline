@@ -80,6 +80,9 @@ const Profile = () => {
           <strong>Mobile Number:</strong> {profile.mobileNo}
         </p>
         <p>
+          <strong>Credit Card Number:</strong> {profile.creditCardNo}
+        </p>
+        <p>
           <strong>Billing Address:</strong> {profile.billingAddress}
         </p>
         <p>
