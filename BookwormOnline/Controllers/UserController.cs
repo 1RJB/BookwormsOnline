@@ -179,7 +179,7 @@ namespace BookwormOnline.Controllers
 
         private bool IsValidMobileNumber(string mobileNo)
         {
-            return Regex.IsMatch(mobileNo, @"^\+?[0-9]\d{8}$");
+            return Regex.IsMatch(mobileNo, @"^\d{8,8}$");
         }
 
         [HttpPost("login")]
