@@ -1,3 +1,4 @@
+import React, { useEffect } from "react"
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom"
 import Register from "./components/Register"
 import Login from "./components/Login"
@@ -10,6 +11,27 @@ import Header from "./components/Header"
 import { AuthProvider } from "./contexts/AuthContext"
 
 const App = () => {
+  useEffect(() => {
+    const fetchCsrfToken = async () => {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/Csrf/token`)
+        if (!response.ok) {
+          throw new Error("Failed to fetch CSRF token")
+        }
+        const data = await response.json()
+        // Assuming the token is returned as { token: 'the_token' }
+        const csrfToken = data.token
+
+        // Set the token as a default header for all subsequent requests
+        document.documentElement.style.setProperty("--csrf-token", csrfToken)
+      } catch (error) {
+        console.error("Could not fetch CSRF token:", error)
+      }
+    }
+
+    fetchCsrfToken()
+  }, [])
+
   return (
     <AuthProvider>
       <Router>
