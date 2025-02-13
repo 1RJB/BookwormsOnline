@@ -19,7 +19,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Add controllers
-builder.Services.AddControllers();
+builder.Services.AddControllersWithViews();
 
 // Rate limiting
 builder.Services.AddMemoryCache();
@@ -30,8 +30,7 @@ builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>()
 builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
 builder.Services.AddInMemoryRateLimiting();
 
-// Configure JWT authentication
-// Update the JWT configuration in Program.cs
+// Configure JWT authentication (if still needed for token-based flows)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -47,7 +46,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
             ClockSkew = TimeSpan.Zero
         };
-
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context =>
@@ -68,7 +66,6 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        // Adjust to match your frontend URL
         policy.WithOrigins("http://localhost:3000")
               .AllowCredentials()
               .AllowAnyHeader()
@@ -80,12 +77,11 @@ builder.Services.AddCors(options =>
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    // Set session idle timeout
+    options.IdleTimeout = TimeSpan.FromMinutes(15);
+    options.Cookie.Name = ".BookwormsOnline.Session";
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
-    // If you're on different domains, you may need:
-    // options.Cookie.SameSite = SameSiteMode.None;
-    // options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 });
 
 // reCAPTCHA & Antiforgery
@@ -114,7 +110,6 @@ app.UseHttpsRedirection();
 
 app.UseCors("AllowFrontend");
 
-// Use session (must come before authentication)
 app.UseSession();
 
 // Additional security headers
