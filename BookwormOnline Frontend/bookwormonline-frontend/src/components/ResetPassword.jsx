@@ -24,7 +24,7 @@ const ResetPassword = () => {
     }
 
     try {
-      const response = await fetch("/api/user/reset-password", {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/reset-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -37,11 +37,16 @@ const ResetPassword = () => {
         setTimeout(() => navigate("/login"), 3000)
       } else {
         const data = await response.json()
-        setError(data.message || "Failed to reset password")
+        setError(data.error || "Failed to reset password")
       }
     } catch (err) {
+      console.error("Reset password error:", err)
       setError("An error occurred. Please try again.")
     }
+  }
+
+  if (!resetToken) {
+    return <div className="text-red-500">Invalid reset link. Please request a new password reset.</div>
   }
 
   return (
@@ -79,4 +84,3 @@ const ResetPassword = () => {
 }
 
 export default ResetPassword
-
