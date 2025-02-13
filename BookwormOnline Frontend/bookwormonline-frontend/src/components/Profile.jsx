@@ -12,21 +12,27 @@ const Profile = () => {
     const fetchProfile = async () => {
       setError("")
       try {
-        const response = await fetch("https://localhost:7177/api/user/profile", {
+        if (!user?.token) {
+          throw new Error("No authentication token found")
+        }
+
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/profile`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${user?.token}`,
-          },
-          credentials: "include",
+            'Authorization': `Bearer ${user.token}`,
+            'Content-Type': 'application/json'
+          }
         })
+
         if (!response.ok) {
           const msg = await response.text()
           throw new Error(`Failed to fetch profile: ${msg}`)
         }
+
         const data = await response.json()
         setProfile(data)
       } catch (err) {
-        console.error("Failed to fetch profile", err)
+        console.error("Failed to fetch profile:", err)
         setError("Could not load profile data.")
       }
     }
@@ -36,8 +42,12 @@ const Profile = () => {
     }
   }, [user])
 
+  if (!user?.token) {
+    return <div>Please log in to view your profile.</div>
+  }
+
   if (error) {
-    return <div>Error: {error}</div>
+    return <div className="error-message">Error: {error}</div>
   }
 
   if (!profile) {
@@ -49,13 +59,16 @@ const Profile = () => {
       <h2>Profile</h2>
       <div className="profile-info">
         <p>
-          <strong>Name:</strong> {profile.firstName} {profile.lastName}
+          <strong>First Name:</strong> {profile.firstName}
+        </p>
+        <p>
+          <strong>Last Name:</strong> {profile.lastName}
         </p>
         <p>
           <strong>Email:</strong> {profile.email}
         </p>
         <p>
-          <strong>Mobile:</strong> {profile.mobileNo}
+          <strong>Mobile Number:</strong> {profile.mobileNo}
         </p>
         <p>
           <strong>Billing Address:</strong> {profile.billingAddress}
@@ -63,12 +76,20 @@ const Profile = () => {
         <p>
           <strong>Shipping Address:</strong> {profile.shippingAddress}
         </p>
+        {/* Profile picture */}
+        {profile.photoPath && (
+          <img
+          src={`${import.meta.env.VITE_FILE_BASE_URL}${profile.photoPath}`}
+            alt="Profile"
+            width="100"
+          />
+        )}
       </div>
       <div className="profile-actions">
-        <button onClick={() => (window.location.href = "/change-password")}>
+        <button onClick={() => window.location.href = "/change-password"}>
           Change Password
         </button>
-        <button onClick={() => (window.location.href = "/logout")}>
+        <button onClick={() => window.location.href = "/logout"}>
           Logout
         </button>
       </div>
