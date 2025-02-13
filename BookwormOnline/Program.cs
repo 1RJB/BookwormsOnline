@@ -6,7 +6,6 @@ using System.Text;
 using BookwormOnline.Middleware;
 using AspNetCoreRateLimit;
 using BookwormOnline.Services;
-using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,12 +14,14 @@ var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
 Directory.CreateDirectory(wwwrootPath);
 builder.Environment.WebRootPath = wwwrootPath;
 
-// Add services to the container.
+// Configure EF Core
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Add controllers
 builder.Services.AddControllers();
 
+// Rate limiting
 builder.Services.AddMemoryCache();
 builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
 builder.Services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
@@ -46,36 +47,39 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// Add CORS policy
+// CORS to allow cookies from the frontend
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policyBuilder =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policyBuilder.AllowAnyOrigin()
-                     .AllowAnyMethod()
-                     .AllowAnyHeader();
+        // Adjust to match your frontend URL
+        policy.WithOrigins("http://localhost:3000")
+              .AllowCredentials()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
 
+// Session configuration
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    // If you're on different domains, you may need:
+    // options.Cookie.SameSite = SameSiteMode.None;
+    // options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 });
 
-// Register Antiforgery and ReCaptcha Services
-builder.Services.AddAntiforgery(options =>
-{
-    options.HeaderName = "X-XSRF-TOKEN";
-});
+// reCAPTCHA & Antiforgery
+builder.Services.AddAntiforgery(opts => { opts.HeaderName = "X-XSRF-TOKEN"; });
 builder.Services.AddHttpClient<ReCaptchaService>();
 builder.Services.AddTransient<ReCaptchaService>();
 
+// Build the app
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -85,7 +89,10 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+app.UseCors("AllowFrontend");
+
+// Use session (must come before authentication)
+app.UseSession();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -93,7 +100,4 @@ app.UseAuthorization();
 app.UseIpRateLimiting();
 
 app.MapControllers();
-
-app.UseSession();
-
 app.Run();
