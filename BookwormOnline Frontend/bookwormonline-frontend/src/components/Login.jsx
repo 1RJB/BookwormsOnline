@@ -24,8 +24,13 @@ const Login = () => {
 
     try {
       const reCaptchaToken = await executeRecaptcha("login")
-      await login(email, password, reCaptchaToken)
+      const result = await login(email, password, reCaptchaToken)
+
+      if (result.requiresTwoFactor) {
+        navigate("/verify-2fa")
+      } else {
       navigate("/profile")
+      }
     } catch (err) {
       setError("Login failed. Please check your credentials and try again.")
     }
