@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password, reCaptchaToken) => {
     try {
-      const response = await fetch("https://localhost:7177/api/user/login", {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -31,6 +31,7 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json()
       localStorage.setItem("token", data.token)
       setUser({ token: data.token })
+      return data
     } catch (error) {
       console.error("Login error:", error)
       throw error
@@ -39,9 +40,9 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      const response = await fetch("https://localhost:7177/api/user/register", {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/register`, {
         method: "POST",
-        body: userData
+        body: userData // Keep as FormData for file upload support
       })
 
       if (!response.ok) {
@@ -58,9 +59,14 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem("token")
     setUser(null)
+    window.location.href = "/login"
   }
 
-  return <AuthContext.Provider value={{ user, login, register, logout }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export const useAuth = () => {
