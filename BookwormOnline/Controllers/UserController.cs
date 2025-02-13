@@ -308,7 +308,7 @@ namespace BookwormOnline.Controllers
                 }
 
                 // If valid, refresh the session expiry on each verify call
-                storedSession.Expiry = DateTime.UtcNow.AddMinutes(30);
+                storedSession.Expiry = DateTime.UtcNow.AddMinutes(15);
             }
 
             return Ok();
