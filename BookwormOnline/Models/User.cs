@@ -46,5 +46,7 @@ namespace BookwormOnline.Models
         public DateTime? PasswordResetTokenExpiry { get; set; }
         public List<string> PreviousPasswords { get; set; } = new List<string>();
         public DateTime? LastPasswordChangeDate { get; set; }
+        public string? TwoFactorCode { get; set; }
+        public DateTime? TwoFactorCodeExpiry { get; set; }
     }
 }
