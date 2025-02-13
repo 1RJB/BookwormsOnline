@@ -451,12 +451,12 @@ namespace BookwormOnline.Controllers
 
         private string EncryptData(string data)
         {
-            return _encryptionService.EncryptData(data);
+            return _encryptionService.EncryptAES(data);
         }
 
         private string DecryptData(string encryptedData)
         {
-            return _encryptionService.DecryptData(encryptedData);
+            return _encryptionService.DecryptAES(encryptedData);
         }
 
         private string GenerateJwtToken(User user)
