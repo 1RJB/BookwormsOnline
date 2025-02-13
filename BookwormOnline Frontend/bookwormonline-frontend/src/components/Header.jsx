@@ -1,33 +1,51 @@
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 
 const Header = () => {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
+  const location = useLocation()
+
+  const isActive = (path) => {
+    return location.pathname === path ? "nav-link active" : "nav-link"
+  }
 
   return (
-    <header className="bg-blue-600 text-white p-4">
-      <div className="container mx-auto flex justify-between items-center">
-        <Link to="/" className="text-2xl font-bold">
-          Bookworms Online
+    <header className="header">
+      <div className="header-container">
+        <Link to="/" className="logo">
+          <h1>📚 Bookworms Online</h1>
         </Link>
-        <nav>
-          <ul className="flex space-x-4">
+        <nav className="nav-menu">
+          <ul>
             {user ? (
               <>
                 <li>
-                  <Link to="/profile">Profile</Link>
+                  <Link to="/profile" className={isActive("/profile")}>
+                    Profile
+                  </Link>
                 </li>
                 <li>
-                  <Link to="/change-password">Change Password</Link>
+                  <Link to="/change-password" className={isActive("/change-password")}>
+                    Change Password
+                  </Link>
+                </li>
+                <li>
+                  <button onClick={logout} className="logout-button">
+                    Logout
+                  </button>
                 </li>
               </>
             ) : (
               <>
                 <li>
-                  <Link to="/login">Login</Link>
+                  <Link to="/login" className={isActive("/login")}>
+                    Login
+                  </Link>
                 </li>
                 <li>
-                  <Link to="/register">Register</Link>
+                  <Link to="/register" className={isActive("/register")}>
+                    Register
+                  </Link>
                 </li>
               </>
             )}
@@ -39,4 +57,3 @@ const Header = () => {
 }
 
 export default Header
-
