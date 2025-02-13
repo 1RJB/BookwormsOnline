@@ -413,7 +413,7 @@ namespace BookwormOnline.Controllers
 
                 if (_userSessions[userId].Count > 0 && !_userSessions[userId].Contains(sessionId))
                 {
-                    return StatusCode(401, "Another session is active");
+                    return Conflict(new { error = "Another session is active. Logout from the other session to login here." });
                 }
 
                 _userSessions[userId].Add(sessionId);
