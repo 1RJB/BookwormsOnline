@@ -38,7 +38,7 @@ const ChangePassword = () => {
         setConfirmPassword("")
       } else {
         const data = await response.json()
-        setError(data.message || "Failed to change password")
+        setError(data.error || "Failed to change password")
       }
     } catch (err) {
       setError("An error occurred. Please try again.")
