@@ -154,6 +154,7 @@ namespace BookwormOnline.Controllers
             };
 
             _context.Users.Add(user);
+            user.PreviousPasswords.Add(user.PasswordHash);
             await _context.SaveChangesAsync();
 
             return Ok("User registered successfully");
