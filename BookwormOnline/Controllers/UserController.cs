@@ -213,6 +213,13 @@ namespace BookwormOnline.Controllers
 
                 Console.WriteLine($"Login successful for user: {user.Email}");
 
+                // If login is successful, record the single session in the dictionary with an expiry.
+                var sessionId = HttpContext.Session.Id;
+                lock (_userSessions)
+                {
+                    _userSessions[user.Id] = new SessionInfo(sessionId, DateTime.UtcNow.AddMinutes(30));
+                }
+
                 // Client expects { requiresTwoFactor = true }, then calls verify-2fa
                 return Ok(new { requiresTwoFactor = true });
             }
