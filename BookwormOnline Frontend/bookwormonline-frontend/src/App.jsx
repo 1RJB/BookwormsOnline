@@ -9,6 +9,7 @@ import ResetPassword from "./components/ResetPassword"
 import TwoFactorVerification from "./components/TwoFactorVerification"
 import Header from "./components/Header"
 import { AuthProvider } from "./contexts/AuthContext"
+import ErrorPage from "./components/ErrorPage"
 
 const App = () => {
   useEffect(() => {
@@ -47,6 +48,8 @@ const App = () => {
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/verify-2fa" element={<TwoFactorVerification />} />
               <Route path="/" element={<Navigate to="/login" replace />} />
+              {/* Anything else should be handled by the error route */}
+              <Route path="/*" element={<ErrorPage/>} />
             </Routes>
           </main>
         </div>
