@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
         alert("Your session has expired or another session is active. Please log in again.")
         window.location.href = "/login"
       }
-    }, 600000) // Check every 10 minutes
+    }, 60000) // Check every 1 minute
 
     // Store interval ID to clear it on logout
     window.sessionCheckInterval = intervalId
