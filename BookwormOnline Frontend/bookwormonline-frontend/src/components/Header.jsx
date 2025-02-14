@@ -13,7 +13,7 @@ const Header = () => {
     <header className="header">
       <div className="header-container">
         <Link to="/" className="logo">
-          <h1>📚 Bookworms Online</h1>
+          <h1><img src="vite.svg" height={"30rem"} alt="Vite logo" /> Bookworms Online</h1>
         </Link>
         <nav className="nav-menu">
           <ul>
