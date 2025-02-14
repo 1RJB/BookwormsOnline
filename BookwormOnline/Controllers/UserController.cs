@@ -197,7 +197,7 @@ namespace BookwormOnline.Controllers
                     user.LoginAttempts++;
                     if (user.LoginAttempts >= 3)
                     {
-                        user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+                        user.LockoutEnd = DateTime.UtcNow.AddMinutes(1);
                     }
                     await _context.SaveChangesAsync();
                     Console.WriteLine($"Login attempt failed: Invalid password (Attempts: {user.LoginAttempts})");
@@ -315,7 +315,7 @@ namespace BookwormOnline.Controllers
                 }
 
                 // If valid, refresh the session expiry on each verify call
-                storedSession.Expiry = DateTime.UtcNow.AddMinutes(15);
+                storedSession.Expiry = DateTime.UtcNow.AddMinutes(1);
             }
 
             return Ok();
