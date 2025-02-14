@@ -213,14 +213,6 @@ namespace BookwormOnline.Controllers
 
                 Console.WriteLine($"Login successful for user: {user.Email}");
 
-                // If login is successful, record the single session in the dictionary with an expiry.
-                var sessionId = HttpContext.Session.Id;
-                lock (_userSessions)
-                {
-                    _userSessions[user.Id] = new SessionInfo(sessionId, DateTime.UtcNow.AddMinutes(30));
-                }
-
-                // Client expects { requiresTwoFactor = true }, then calls verify-2fa
                 return Ok(new { requiresTwoFactor = true });
             }
             catch (Exception ex)
@@ -254,13 +246,6 @@ namespace BookwormOnline.Controllers
             // Generate JWT token
             var token = GenerateJwtToken(user);
 
-            // Record the single session in the dictionary with an expiry (e.g., 30 minutes).
-            var sessionId = HttpContext.Session.Id;
-            lock (_userSessions)
-            {
-                _userSessions[user.Id] = new SessionInfo(sessionId, DateTime.UtcNow.AddMinutes(30));
-            }
-
             return Ok(new { token });
         }
 
@@ -280,7 +265,6 @@ namespace BookwormOnline.Controllers
                 }
             }
 
-            HttpContext.Session.Clear();
             return Ok("Logged out successfully");
         }
 
@@ -290,32 +274,30 @@ namespace BookwormOnline.Controllers
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
                 throw new InvalidOperationException("User ID not found in token"));
-            var currentSessionId = HttpContext.Session.Id;
+            var tokenSessionId = User.FindFirst("SessionId")?.Value;
+
             SessionInfo storedSession;
 
             lock (_userSessions)
             {
                 if (!_userSessions.TryGetValue(userId, out storedSession))
                 {
-                    // No stored session info means the user hasn't completed 2FA or session expired
+                    Console.WriteLine($"Session not found for user {userId}");
                     return Unauthorized(new { error = "Session expired or not found. Please log in again." });
                 }
 
-                // Check if the stored session is the same as current, and not expired
-                if (!string.Equals(storedSession.SessionId, currentSessionId, StringComparison.Ordinal))
+                if (!string.Equals(storedSession.SessionId, tokenSessionId, StringComparison.Ordinal))
                 {
+                    Console.WriteLine("Multiple sessions detected");
                     return Conflict(new { error = "Another session is active. Logout from the other session to continue." });
                 }
+
                 if (DateTime.UtcNow > storedSession.Expiry)
                 {
-                    // Session has expired
                     _userSessions.Remove(userId);
-                    HttpContext.Session.Clear();
+                    Console.WriteLine("Session expired");
                     return Unauthorized(new { error = "Your session has timed out. Please log in again." });
                 }
-
-                // If valid, refresh the session expiry on each verify call
-                storedSession.Expiry = DateTime.UtcNow.AddMinutes(1);
             }
 
             return Ok();
@@ -529,11 +511,24 @@ namespace BookwormOnline.Controllers
 
         private string GenerateJwtToken(User user)
         {
+            var sessionId = Guid.NewGuid().ToString();
+
             var claims = new[]
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Email, user.Email)
-            };
+           new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+           new Claim(ClaimTypes.Email, user.Email),
+           new Claim("SessionId", sessionId)
+       };
+
+            // Store the session ID with user ID as before
+            lock (_userSessions)
+            {
+                if (_userSessions.ContainsKey(user.Id))
+                {
+                    Console.WriteLine($"Multiple login detected for user {user.Email}. Overwriting session {_userSessions[user.Id].SessionId} with new session {sessionId}.");
+                }
+                _userSessions[user.Id] = new SessionInfo(sessionId, DateTime.UtcNow.AddMinutes(1));
+            }
 
             var jwtKey = _configuration["Jwt:Key"];
             if (string.IsNullOrEmpty(jwtKey))
@@ -548,11 +543,12 @@ namespace BookwormOnline.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.Now.AddMinutes(30),
+                expires: DateTime.UtcNow.AddMinutes(30),
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
 
         // Holds session ID and an expiry time
         private class SessionInfo
