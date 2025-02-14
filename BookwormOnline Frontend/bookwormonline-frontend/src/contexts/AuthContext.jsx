@@ -7,6 +7,7 @@ const AuthContext = createContext(undefined)
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -33,16 +34,16 @@ export const AuthProvider = ({ children }) => {
 
       if (!response.ok) {
         // If session verification fails, log out the user
-        const errorData = await response.text()
-        console.error("Session verification failed:", errorData)
-        await logout()
+        const errorData = await response.json()
+        console.error("Session verification failed:", errorData.error)
+        setError(errorData.error || "Session verification failed")
         return false
       }
 
       return true
     } catch (error) {
       console.error("Session verification error:", error)
-      await logout()
+      setError(error || "Session verification failed")
       return false
     }
   }
@@ -55,10 +56,14 @@ export const AuthProvider = ({ children }) => {
       if (!isValid) {
         clearInterval(intervalId)
         // Show session expired message
-        alert("Your session has expired or another session is active. Please log in again.")
-        window.location.href = "/login"
+        alert(error || "Your session has expired or another session is active. Please log in again.")
+        if (error == "Another session is active. Logout from the other session to continue.") {
+          startSessionVerification() // Restart session verification
+        } else {
+          logout()
+        }
       }
-    }, 60000) // Check every 1 minute
+    }, 3000) // Check every 3 seconds
 
     // Store interval ID to clear it on logout
     window.sessionCheckInterval = intervalId
@@ -80,7 +85,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       const data = await response.json()
-      
+
       if (data.requiresTwoFactor) {
         setEmail(email)
         return { requiresTwoFactor: true }
