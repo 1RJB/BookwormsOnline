@@ -78,7 +78,7 @@ builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
     // Set session idle timeout
-    options.IdleTimeout = TimeSpan.FromMinutes(10);
+    options.IdleTimeout = TimeSpan.FromMinutes(1);
     options.Cookie.Name = ".BookwormsOnline.Session";
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
