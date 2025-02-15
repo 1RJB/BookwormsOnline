@@ -238,6 +238,21 @@ namespace BookwormOnline.Controllers
                 return BadRequest(new { error = "Invalid code" });
             }
 
+            // If the user does NOT want to force logout, but we find an existing session
+            // that hasn't been forcibly logged out, return a conflict so the new front-end
+            // can either continue or cancel.
+            if (_userSessions.TryGetValue(user.Id, out var oldSession) && !model.ForceLogout)
+            {
+                return Conflict(new { sessionConflict = true });
+            }
+
+            // If ForceLogout is true, mark that old session forcibly logged out (if any existed):
+            if (_userSessions.TryGetValue(user.Id, out var existingSession))
+            {
+                existingSession.ForcedLogout = true;
+                _userSessions.Remove(user.Id);
+            }
+
             // Clear 2FA code
             user.TwoFactorCode = null;
             user.TwoFactorCodeExpiry = null;
@@ -246,7 +261,7 @@ namespace BookwormOnline.Controllers
             // Generate JWT token
             var token = GenerateJwtToken(user);
 
-            return Ok(new { token });
+            return Ok(new { success = true, token });
         }
 
         [Authorize]
@@ -272,35 +287,41 @@ namespace BookwormOnline.Controllers
         [HttpPost("verify-session")]
         public IActionResult VerifySession()
         {
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
-                throw new InvalidOperationException("User ID not found in token"));
+            var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(userIdStr, out var userId))
+                return Unauthorized(new { error = "User not found in token" });
+
             var tokenSessionId = User.FindFirst("SessionId")?.Value;
-
-            SessionInfo storedSession;
-
             lock (_userSessions)
             {
-                if (!_userSessions.TryGetValue(userId, out storedSession))
+                if (!_userSessions.TryGetValue(userId, out var storedSession))
                 {
-                    Console.WriteLine($"Session not found for user {userId}");
-                    return Unauthorized(new { error = "Session expired or not found. Please log in again." });
+                    // Possibly forcibly logged out or expired
+                    return Conflict(new { error = "ForciblyLoggedOut" });
                 }
 
+                // If session IDs do not match, it means multiple sessions for same user
                 if (!string.Equals(storedSession.SessionId, tokenSessionId, StringComparison.Ordinal))
                 {
-                    Console.WriteLine("Multiple sessions detected");
                     return Conflict(new { error = "Another session is active. Logout from the other session to continue." });
                 }
 
+                // If forcibly logged out
+                if (storedSession.ForcedLogout)
+                {
+                    _userSessions.Remove(userId);
+                    return Conflict(new { error = "ForciblyLoggedOut" });
+                }
+
+                // If session is expired
                 if (DateTime.UtcNow > storedSession.Expiry)
                 {
                     _userSessions.Remove(userId);
-                    Console.WriteLine("Session expired");
                     return Unauthorized(new { error = "Your session has timed out. Please log in again." });
                 }
-            }
 
-            return Ok();
+                return Ok();
+            }
         }
 
         [Authorize]
@@ -443,8 +464,28 @@ namespace BookwormOnline.Controllers
                 return BadRequest(new { error = "New password does not meet complexity requirements. At least 12 chars, 1 uppercase, 1 lowercase, 1 digit, and 1 special character." });
             }
 
+            // Check password history
+            if (user.PreviousPasswords.Any(p => VerifyPassword(model.NewPassword, p)))
+            {
+                return BadRequest(new { error = "New password must be different from the last 2 passwords" });
+            }
+
+            // Check minimum password age
+            if (user.LastPasswordChangeDate.HasValue && user.LastPasswordChangeDate.Value.AddMinutes(5) > DateTime.UtcNow)
+            {
+                return BadRequest(new { error = "You cannot change your password more than once every 5 minutes" });
+            }
+
             // Update password
             user.PasswordHash = HashPassword(model.NewPassword);
+
+            // Add new password to history
+            user.PreviousPasswords.Add(user.PasswordHash);
+            if (user.PreviousPasswords.Count > 2)
+            {
+                user.PreviousPasswords.RemoveAt(0);
+            }
+
             user.PasswordResetToken = null;
             user.PasswordResetTokenExpiry = null;
             user.LastPasswordChangeDate = DateTime.UtcNow;
@@ -512,29 +553,21 @@ namespace BookwormOnline.Controllers
         private string GenerateJwtToken(User user)
         {
             var sessionId = Guid.NewGuid().ToString();
-
             var claims = new[]
             {
-           new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-           new Claim(ClaimTypes.Email, user.Email),
-           new Claim("SessionId", sessionId)
-       };
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Email, user.Email),
+                new Claim("SessionId", sessionId)
+            };
 
-            // Store the session ID with user ID as before
             lock (_userSessions)
             {
-                if (_userSessions.ContainsKey(user.Id))
-                {
-                    Console.WriteLine($"Multiple login detected for user {user.Email}. Overwriting session {_userSessions[user.Id].SessionId} with new session {sessionId}.");
-                }
                 _userSessions[user.Id] = new SessionInfo(sessionId, DateTime.UtcNow.AddMinutes(1));
             }
 
             var jwtKey = _configuration["Jwt:Key"];
             if (string.IsNullOrEmpty(jwtKey))
-            {
                 throw new InvalidOperationException("JWT key is not configured.");
-            }
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -543,23 +576,25 @@ namespace BookwormOnline.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(30),
-                signingCredentials: creds);
+                expires: DateTime.UtcNow.AddMinutes(1),
+                signingCredentials: creds
+            );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-
 
         // Holds session ID and an expiry time
         private class SessionInfo
         {
             public string SessionId { get; set; }
             public DateTime Expiry { get; set; }
+            public bool ForcedLogout { get; set; } // Indicate if old session is forcibly logged out
 
             public SessionInfo(string sessionId, DateTime expiry)
             {
                 SessionId = sessionId;
                 Expiry = expiry;
+                ForcedLogout = false;
             }
         }
     }
