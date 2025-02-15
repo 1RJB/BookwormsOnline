@@ -33,39 +33,33 @@ export const AuthProvider = ({ children }) => {
       })
 
       if (!response.ok) {
-        // If session verification fails, log out the user
         const errorData = await response.json()
-        console.error("Session verification failed:", errorData.error)
-        setError(errorData.error || "Session verification failed")
+        console.error("Session verification returned error:", errorData.error)
+
+        if (errorData.error === "Your session has timed out. Please log in again.") {
+          alert("Your session has expired. Please log in again.")
+        } 
         return false
       }
 
       return true
     } catch (error) {
       console.error("Session verification error:", error)
-      setError(error || "Session verification failed")
       return false
     }
   }
 
-  // Function to start periodic session verification
+  // Periodically verify session
   const startSessionVerification = () => {
-    // Verify session every minute
     const intervalId = setInterval(async () => {
       const isValid = await verifySession()
       if (!isValid) {
         clearInterval(intervalId)
-        // Show session expired message
-        alert(error || "Your session has expired or another session is active. Please log in again.")
-        if (error == "Another session is active. Logout from the other session to continue.") {
-          startSessionVerification() // Restart session verification
-        } else {
-          logout()
-        }
+        logout(false) // Do not show another alert in logout()
       }
-    }, 3000) // Check every 3 seconds
+    }, 3000) // e.g., every 3 seconds
 
-    // Store interval ID to clear it on logout
+    // In case we need to clear interval on logout:
     window.sessionCheckInterval = intervalId
   }
 
@@ -96,24 +90,34 @@ export const AuthProvider = ({ children }) => {
       setEmail(null)
       startSessionVerification() // Start session verification after successful login
       return data
-    } catch (error) {
-      console.error("Login error:", error)
-      throw error
+    } catch (err) {
+      console.error("Login error:", err)
+      throw err
     }
   }
 
-  const verifyTwoFactor = async (code) => {
+  const verifyTwoFactor = async (code, forceLogout = false) => {
     try {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/user/verify-2fa`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, code }),
+        body: JSON.stringify({ email, code, forceLogout }),
       })
 
+      // If server returns sessionConflict, handle it:
+      if (response.status === 409) {
+        const conflictData = await response.json()
+        if (conflictData.sessionConflict) {
+          // Return a custom indicator so the UI can show an OK/Cancel
+          return { sessionConflict: true }
+        }
+      }
+
       if (!response.ok) {
-        throw new Error("2FA verification failed")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "2FA verification failed")
       }
 
       const data = await response.json()
@@ -146,7 +150,8 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  const logout = async () => {
+  // If "showAlert" is true, we can show an alert; 
+  const logout = async (showAlert = true) => {
     try {
       const token = localStorage.getItem("token")
       if (token) {
@@ -158,13 +163,15 @@ export const AuthProvider = ({ children }) => {
           }
         })
       }
-    } catch (error) {
-      console.error("Logout error:", error)
+    } catch (err) {
+      console.error("Logout error:", err)
     } finally {
+      if (showAlert) {
+        alert("You have been logged out.")
+      }
       localStorage.removeItem("token")
       setUser(null)
       setEmail(null)
-      // Clear session verification interval
       if (window.sessionCheckInterval) {
         clearInterval(window.sessionCheckInterval)
       }
