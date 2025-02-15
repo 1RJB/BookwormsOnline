@@ -7,7 +7,6 @@ const AuthContext = createContext(undefined)
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState(null)
-  const [error, setError] = useState(null)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
