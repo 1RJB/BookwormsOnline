@@ -15,7 +15,9 @@ const App = () => {
   useEffect(() => {
     const fetchCsrfToken = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/Csrf/token`)
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/Csrf/token`, {
+          credentials: 'include',
+        })
         if (!response.ok) {
           throw new Error("Failed to fetch CSRF token")
         }
@@ -27,6 +29,10 @@ const App = () => {
         document.documentElement.style.setProperty("--csrf-token", csrfToken)
       } catch (error) {
         console.error("Could not fetch CSRF token:", error)
+        // Handle unauthorized error by redirecting to login
+        if (error.message.includes("Failed to fetch CSRF token")) {
+          window.location.href = "/login"
+        }
       }
     }
 
@@ -48,8 +54,7 @@ const App = () => {
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/verify-2fa" element={<TwoFactorVerification />} />
               <Route path="/" element={<Navigate to="/login" replace />} />
-              {/* Anything else should be handled by the error route */}
-              <Route path="/*" element={<ErrorPage/>} />
+              <Route path="/*" element={<ErrorPage />} />
             </Routes>
           </main>
         </div>
