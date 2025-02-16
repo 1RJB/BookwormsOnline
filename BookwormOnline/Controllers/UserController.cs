@@ -426,7 +426,7 @@ namespace BookwormOnline.Controllers
             await _context.SaveChangesAsync();
 
             // Use the frontend URL from configuration
-            var frontendUrl = _configuration["Frontend:BaseUrl"] ?? "http://localhost:3000";
+            var frontendUrl = _configuration["Frontend:BaseUrl"] ?? "https://localhost:3000";
             var resetLink = $"{frontendUrl}/reset-password?token={token}";
 
             await _emailService.SendEmailAsync(
