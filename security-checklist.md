@@ -63,6 +63,6 @@
 
 ## Documentation and Reporting
 - [ ] Prepare a report on implemented security features
-- [ ] Complete and submit the security checklist
+- [1] Complete and submit the security checklist
 
 Remember to test each security feature thoroughly and ensure they work as expected in your web application.
